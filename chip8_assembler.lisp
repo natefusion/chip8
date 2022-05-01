@@ -64,6 +64,34 @@
     (setf (gethash '- inner) #'-)
     (setf (gethash '* inner) #'*)
     (setf (gethash '/ inner) #'/)
+    (setf (gethash '% inner) #'mod)
+    (setf (gethash '&& inner) #'logand)
+    (setf (gethash '|| inner) #'logior)
+    (setf (gethash '^ inner) #'logxor)
+    (setf (gethash '<< inner) #'ash)
+    (setf (gethash '>> inner) #'(lambda (x y) (ash x (- y))))
+    (setf (gethash 'pow inner) #'expt)
+    (setf (gethash 'min inner) #'min)
+    (setf (gethash 'max inner) #'max)
+    (setf (gethash '< inner) #'(lambda (x y) (if (< x y) 1 0)))
+    (setf (gethash '<= inner) #'(lambda (x y) (if (<= x y) 1 0)))
+    (setf (gethash '== inner) #'(lambda (x y) (if (= x y) 1 0)))
+    (setf (gethash '!= inner) #'(lambda (x y) (if (/= x y) 1 0)))
+    (setf (gethash '>= inner) #'(lambda (x y) (if (>= x y) 1 0)))
+    (setf (gethash '> inner) #'(lambda (x y) (if (> x y) 1 0)))
+    (setf (gethash '~ inner) #'lognot)
+    (setf (gethash '! inner) #'(lambda (x) (if (zerop x) 1 0)))
+    (setf (gethash 'sin inner) #'sin)
+    (setf (gethash 'cos inner) #'cos)
+    (setf (gethash 'tan inner) #'tan)
+    (setf (gethash 'exp inner) #'exp)
+    (setf (gethash 'log inner) #'log)
+    (setf (gethash 'abs inner) #'abs)
+    (setf (gethash 'sqrt inner) #'sqrt)
+    (setf (gethash 'sign inner) #'(lambda (x) (if (plusp x) 1 -1)))
+    (setf (gethash 'ceil inner) #'ceiling)
+    (setf (gethash 'floor inner) #'floor)
+    
 
     (setf (gethash 'BREAK inner) (lambda () '(BREAK)))
 
@@ -153,7 +181,8 @@
 (defun chip8-eval-ins (exp env)
   (funcall (chip8-eval (first exp) env)
            (first exp)
-           (chip8-eval-args-partial (rest exp) env) env))
+           (chip8-eval-args-partial (rest exp) env)
+           env))
 
 (defun chip8-eval-args-partial (args env &key eval-v)
   (mapcar (lambda (x)
@@ -234,20 +263,35 @@
        (not (label? exp))))
 
 (defun chip8-eval-application (exp env)
+  ;; Do I want to eval v registers here???
   (apply (chip8-eval (first exp) env)
-         (chip8-eval-args-partial (rest exp) env)))
+         (chip8-eval-args-partial (rest exp) env :eval-v t)))
 
 (defun include? (exp)
   (and (listp exp)
        (eq (first exp) 'INCLUDE)))
 
 (defun chip8-eval-include (exp env)
+  ;; TODO: error if number is larger than a byte
   (incf (car env) (length (remove-if-not #'numberp exp)))
   (chip8-eval-args-partial
    (if (= (mod (length (rest exp)) 2) 0)
        (rest exp)
        (append (rest exp) '(0)))
    env))
+
+(defun unpack? (exp)
+  (and (listp exp)
+       (eq (first exp) 'UNPACK)))
+
+(defun chip8-eval-unpack (exp env)
+  ;; TODO: doesn't handle 16-bit addresses
+  (let ((nibble (chip8-eval (second exp) env))
+        (label (chip8-eval (third exp) env)))
+    (chip8-eval-file
+     `((set v0 ,(logior (ash nibble 4) (ash label -8)))
+       (set v1 ,(logand label #xFF)))
+     env)))
 
 (defun macro? (exp)
   (and (listp exp)
@@ -288,9 +332,10 @@
                         (reverse (nthcdr (- (length exps) main-label) (reverse exps)))
                         :initial-value (list nil nil)
                         :from-end t)))
-        (append (car before-main)
-                (nthcdr main-label exps)
-                (cdr before-main))))))
+          (append (car before-main)
+                  (nthcdr main-label exps)
+                  (cdr before-main)))
+        (error "put main pls"))))
 
 (defun chip8-eval-top (exps env)
   (process-labels (chip8-eval-file (rotate-main exps) env) env))
@@ -311,6 +356,7 @@
         ((var? exp) (chip8-eval-var exp env))
         ((loop? exp) (chip8-eval-loop exp env))
         ((include? exp) (chip8-eval-include exp env))
+        ((unpack? exp) (chip8-eval-unpack exp env))
         ((macro? exp) (chip8-eval-macro exp env))
         ((ins? exp) (chip8-eval-ins exp env))
         ((application? exp) (chip8-eval-application exp env))
