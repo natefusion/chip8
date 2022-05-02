@@ -1,13 +1,3 @@
-;;#!/usr/bin/sbcl --script
-;;(load "/home/nathan/quicklisp/setup.lisp")
-;;(ql:quickload :trivia)
-;;(proclaim '(optimize (speed 3) (safety 0) (debug 0)))
-;;(use-package :trivia)
-
-;(defun chip8-setup ()
-;;  (ql:quickload :trivia)
-;; (use-package :trivia))
-
 (eval-when (:compile-toplevel :execute)
   (ql:quickload :trivia)
   (use-package :trivia))
