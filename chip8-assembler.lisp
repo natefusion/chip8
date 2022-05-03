@@ -209,6 +209,17 @@
            (chip8-eval-args-partial (rest exp) env)
            env))
 
+(defun chip8-eval-loop (exp env)
+  (let ((label (first env))
+        (loop-body (chip8-eval-file (rest exp) env)))
+    (append
+     (loop :for x :in loop-body
+           :if (eq x 'BREAK)
+             :append (chip8-eval `(JUMP ,(+ 4 label)) env)
+           :else
+             :collect x)
+     (chip8-eval `(JUMP ,label) env))))
+
 (defun chip8-eval-include (exp env)
   ;; TODO: error if number is larger than a byte
   (incf (car env) (length (remove-if-not #'numberp exp)))
@@ -287,16 +298,7 @@
            ('(JUMP0 N) '(#xB000 #x0))
            (_ '(0 0)))))))
 
-(defun chip8-eval-loop (exp env)
-  (let ((label (list (first env)))
-        (loop-body (chip8-eval-file (rest exp) env)))
-   (append
-     (loop :for x :in loop-body
-           :if (eq x 'BREAK)
-             :append (emit-op 'JUMP (list (+ 4 (car env))) env)
-           :else
-             :collect x)
-     (emit-op 'JUMP label env))))
+
 
 (defun make-env (&optional outer)
   (let ((inner (make-hash-table)))
