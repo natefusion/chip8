@@ -6,13 +6,15 @@ def S #x8
 def A #x7
 def D #x9
 
-lab main
+include person #x70 #x70 #x20 #x70 #xA8 #x20 #x50 #x50
+
+(proc main
   rand px #b0011111
   rand py #b0001111
   set i person
   draw px py 8
 
-  ( loop
+  (loop
     draw px py 8
 
     set v0 W
@@ -33,14 +35,11 @@ lab main
 
     draw px py 8
 
-    ( loop
+    (loop
       set ve dt
-      neq ve 0
-    )
+      neq ve 0)
 
     set ve 3
-    set dt ve
-  )
+    set dt ve))
 
-lab person
-  include #x70 #x70 #x20 #x70 #xA8 #x20 #x50 #x50
+

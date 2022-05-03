@@ -101,9 +101,31 @@
   (and (listp exp)
        (eq (first exp) 'MACRO)))
 
+(defun proc? (exp)
+  (and (listp exp)
+       (eq (first exp) 'PROC)))
+
+(defun chip8-eval-def (exp env)
+  (setf (gethash (cadr exp) (cadr env)) (caddr exp))
+  nil)
+
+(defun chip8-eval-label (exp env)
+  (setf (gethash (cadr exp) (cadr env)) (car env))
+  nil)
+
+(defun chip8-eval-var (exp env)
+  (let ((inner (gethash exp (cadr env)))
+        (outer (caddr env)))
+    (cond (inner inner)
+          (outer (chip8-eval-var exp outer))
+          (t exp))))
+
 (defun rotate-main (exps)
   "Ensures that the code above 'lab main' is always at the end"
-  (let ((main-label (position '(lab main) exps :test #'equal)))
+  (let ((main-label (loop :for x :in exps
+                          :for pos :from 0
+                          :if (equal '(proc main) (list (first x) (second x)))
+                            :return pos)))
     (if main-label
         ;; defs should be kept at the beginning
         ;; everything else should be put at the end
@@ -118,7 +140,7 @@
                         :from-end t)))
           (append (car before-main)
                   (nthcdr main-label exps)
-                  (cdr before-main)))
+                  (cadr before-main)))
         (error "put main pls"))))
 
 ;; These functions have circular depedencies to chip8-eval
@@ -128,12 +150,14 @@
                 chip8-eval-ins
                 chip8-eval-loop
                 chip8-eval-macro
-                chip8-eval-unpack))
+                chip8-eval-unpack
+                chip8-eval-proc))
 
 (defun chip8-eval (exp env)
   (cond ((self-evaluating? exp) exp)
         ((def? exp) (chip8-eval-def exp env))
         ((label? exp) (chip8-eval-label exp env))
+        ((proc? exp) (chip8-eval-proc exp env))
         ((var? exp) (chip8-eval-var exp env))
         ((loop? exp) (chip8-eval-loop exp env))
         ((include? exp) (chip8-eval-include exp env))
@@ -153,23 +177,8 @@
 (defun chip8-eval-file (exps env)
   (cond
     ((null exps) nil)
-    (t (append (chip8-eval (car exps) env)
+    (t (append (chip8-eval (first exps) env)
                (chip8-eval-file (rest exps) env)))))
-
-(defun chip8-eval-def (exp env)
-  (setf (gethash (cadr exp) (cadr env)) (caddr exp))
-  nil)
-
-(defun chip8-eval-label (exp env)
-  (setf (gethash (cadr exp) (cadr env)) (car env))
-  nil)
-
-(defun chip8-eval-var (exp env)
-  (let ((inner (gethash exp (cadr env)))
-        (outer (caddr env)))
-    (cond (inner inner)
-          (outer (chip8-eval-var exp outer))
-          (t exp))))
 
 (defun chip8-eval-macro (exp env)
   (let ((name (cadr exp))
@@ -183,6 +192,13 @@
                              ',args vars)
                      (chip8-eval-file ',body inner-env))))))
   nil)
+
+(defun chip8-eval-proc (exp env)
+  (let ((name (cadr exp))
+        (body (chip8-eval-file (cddr exp) env)))
+    (chip8-eval `(lab ,name) env)
+    (append body
+            (unless (eq name 'main) (chip8-eval '(ret) env)))))
 
 (defun chip8-eval-top (exps env)
   (process-labels (chip8-eval-file (rotate-main exps) env) env))
@@ -215,19 +231,21 @@
     (append
      (loop :for x :in loop-body
            :if (eq x 'BREAK)
-             :append (chip8-eval `(JUMP ,(+ 4 label)) env)
+             :append (chip8-eval `(JUMP ,(+ 4 (first env))) env)
            :else
              :collect x)
      (chip8-eval `(JUMP ,label) env))))
 
 (defun chip8-eval-include (exp env)
-  ;; TODO: error if number is larger than a byte
-  (incf (car env) (length (remove-if-not #'numberp exp)))
-  (chip8-eval-args-partial
-   (if (= (mod (length (rest exp)) 2) 0)
-       (rest exp)
-       (append (rest exp) '(0)))
-   env))
+  (let ((name (second exp))
+        ;; silently does nothing if no numbers are given to include (bad!)
+        (bytes (let ((x (chip8-eval-args-partial (cddr exp) env)))
+                 (append x (when (oddp (length x)) '(0))))))
+    (dolist (x bytes)
+      (cond ((not (numberp x)) (error "Only numbers can be included"))
+            ((> x 255) (error "cannot include numbers larger than 255 (#xFF)"))))
+    (chip8-eval `(lab ,name) env)
+    bytes))
 
 (defun chip8-eval-application (exp env)
   ;; Do I want to eval v registers here???
