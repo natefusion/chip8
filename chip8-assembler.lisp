@@ -245,6 +245,7 @@
       (cond ((not (numberp x)) (error "Only numbers can be included"))
             ((> x 255) (error "cannot include numbers larger than 255 (#xFF)"))))
     (chip8-eval `(lab ,name) env)
+    (incf (car env) (length bytes))
     bytes))
 
 (defun chip8-eval-application (exp env)
