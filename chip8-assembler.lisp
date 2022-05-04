@@ -27,6 +27,8 @@
     (mapcar #'make-sexp
             (remove-blank (uiop/stream:read-file-lines x)))))
 
+(defstruct env (pc #x200) inner outer)
+
 (defun chip8-eval-v? (exp)
   (match exp
     ('V0 0) ('V1 1) ('V2 2) ('V3 3)
@@ -106,19 +108,26 @@
        (eq (first exp) 'PROC)))
 
 (defun chip8-eval-def (exp env)
-  (setf (gethash (cadr exp) (cadr env)) (caddr exp))
-  nil)
+  (let ((name (second exp))
+        (value (third exp)))
+    (cond ((assoc name (env-inner env)) (error "def Redefinition of '~a'" name))
+          ((null value) (error "'def ~a' was not initialized" name)) 
+          (t (push (cons name value) (env-inner env))))
+    nil))
 
 (defun chip8-eval-label (exp env)
-  (setf (gethash (cadr exp) (cadr env)) (car env))
-  nil)
+  (let ((name (second exp)))
+    (if (assoc name (env-inner env))
+        (error "label Redefinition of '~a'" name)
+        (push (cons name (env-pc env)) (env-inner env)))
+    nil))
 
 (defun chip8-eval-var (exp env)
-  (let ((inner (gethash exp (cadr env)))
-        (outer (caddr env)))
-    (cond (inner inner)
+  (let ((inner (assoc exp (env-inner env)))
+        (outer (env-outer env)))
+    (cond (inner (cdr inner))
           (outer (chip8-eval-var exp outer))
-          (t (list exp nil)))))
+          (t exp))))
 
 (defun rotate-main (exps)
   "Ensures that the code above 'lab main' is always at the end"
@@ -167,13 +176,11 @@
         ((application? exp) (chip8-eval-application exp env))
         (t (error "wow you did something bad"))))
 
-(defun process-labels (exps env)
-  "Flattens list and processes unresolved labels"
-  (cond
-    ((null exps) nil)
-    ((atom exps) (list exps))
-    ((null (second exps)) (error "invalid var found in: '~a'" (first exps)))
-    (t (mapcan (lambda (x) (process-labels (chip8-eval x env) env)) exps))))
+(defun remove-nesting (exps)
+  "Flattens list"
+  (cond ((null exps) nil)
+        ((atom exps) (list exps))
+        (t (mapcan (lambda (x) (remove-nesting x)) exps))))
 
 (defun chip8-eval-file (exps env)
   (cond
@@ -182,26 +189,26 @@
                (chip8-eval-file (rest exps) env)))))
 
 (defun chip8-eval-macro (exp env)
-  (let ((name (cadr exp))
-        (args (caddr exp))
+  (let ((name (second exp))
+        (args (third exp))
         (body (cdddr exp)))
-    (setf (gethash name (cadr env))
-          (lambda (&rest vars)
-                  (let ((inner-env (make-env (copy-list env))))
-                    (mapcar (lambda (arg var)
-                              (setf (gethash arg (cadr inner-env)) var))
-                            args vars)
-                    (chip8-eval-file body inner-env)))))
-  nil)
+    (if (assoc name (env-inner env))
+        (error "macro redefinition of '~a'" name)
+        (push (cons name (lambda (&rest vars)
+                           (let ((new-env (make-env :outer (copy-list (env-inner env)))))
+                             (mapcar (lambda (arg var) (push (cons arg var) (env-inner new-env))) args vars)
+                             (chip8-eval-file body new-env))))
+              (env-inner env)))
+    nil))
 
 (defun chip8-eval-proc (exp env)
-  (let ((name (cadr exp))
+  (let ((name (second exp))
         (body (cddr exp)))
     (chip8-eval `(lab ,name) env)
     (append (chip8-eval-file body env) (unless (eq name 'main) (chip8-eval '(ret) env)))))
 
 (defun chip8-eval-top (exps env)
-  (process-labels (chip8-eval-file (rotate-main exps) env) env))
+  (remove-nesting (mapcar (lambda (x) (chip8-eval x env) ) (chip8-eval-file (rotate-main exps) env))))
 
 (defun chip8-eval-unpack (exp env)
   ;; TODO: doesn't handle 16-bit addresses
@@ -226,12 +233,12 @@
            env))
 
 (defun chip8-eval-loop (exp env)
-  (let ((label (first env))
+  (let ((label (env-pc env))
         (loop-body (chip8-eval-file (rest exp) env)))
     (append
      (loop :for x :in loop-body
            :if (eq x 'BREAK)
-             :append (chip8-eval `(JUMP ,(+ 4 (first env))) env)
+             :append (chip8-eval `(JUMP ,(+ 4 (env-pc env))) env)
            :else
              :collect x)
      (chip8-eval `(JUMP ,label) env))))
@@ -245,7 +252,7 @@
       (cond ((not (numberp x)) (error "Only numbers can be included"))
             ((> x 255) (error "cannot include numbers larger than 255 (#xFF)"))))
     (chip8-eval `(lab ,name) env)
-    (incf (car env) (length bytes))
+    (incf (env-pc env) (length bytes))
     bytes))
 
 (defun chip8-eval-application (exp env)
@@ -264,7 +271,7 @@
                                  (logand shell #xFF))))))
 
 (defun emit-op (proc args env)
-  (incf (first env) 2)
+  (incf (env-pc env) 2)
   
   (let ((stripped-args
           (remove-if #'builtin-var? (chip8-eval-args-partial args env :eval-v t))))
@@ -315,74 +322,40 @@
            ('(CALL N) '(#x2000 #x0))
            ('(JUMP N) '(#x1000 #x0))
            ('(JUMP0 N) '(#xB000 #x0))
-           (_ (error "that's not an instruction")))))))
+           (_ (error "Invalid instruction '~a'" proc)))))))
 
+(defparameter *default-namespace*
+  `((EQ    . ,#'emit-op)
+    (NEQ   . ,#'emit-op)
+    (SET   . ,#'emit-op)
+    (ADD   . ,#'emit-op)
+    (OR    . ,#'emit-op)
+    (AND   . ,#'emit-op)
+    (XOR   . ,#'emit-op)
+    (SUB   . ,#'emit-op)
+    (SHR   . ,#'emit-op)
+    (SUBR  . ,#'emit-op)
+    (SHL   . ,#'emit-op)
+    (RAND  . ,#'emit-op)
+    (DRAW  . ,#'emit-op)
+    (BCD   . ,#'emit-op)
+    (WRITE . ,#'emit-op)
+    (READ  . ,#'emit-op)
+    (CLEAR . ,#'emit-op)
+    (RET   . ,#'emit-op)
+    (CALL  . ,#'emit-op)
+    (JUMP  . ,#'emit-op)
+    (JUMP0 . ,#'emit-op)
+    (BREAK . ,#'(lambda () '(BREAK)))
+    (+ . ,#'+)
+    (- . ,#'-)
+    (* . ,#'*)
+    (/ . ,#'/)))
 
-
-(defun make-env (&optional outer)
-  (let ((inner (make-hash-table)))
-    (setf (gethash 'EQ inner) #'emit-op)
-    (setf (gethash 'NEQ inner) #'emit-op)
-    (setf (gethash 'SET inner) #'emit-op)
-    (setf (gethash 'ADD inner) #'emit-op)
-    (setf (gethash 'OR inner) #'emit-op)
-    (setf (gethash 'AND inner) #'emit-op)
-    (setf (gethash 'XOR inner) #'emit-op)
-    (setf (gethash 'SUB inner) #'emit-op)
-    (setf (gethash 'SHR inner) #'emit-op)
-    (setf (gethash 'SUBR inner) #'emit-op)
-    (setf (gethash 'SHL inner) #'emit-op)
-    (setf (gethash 'RAND inner) #'emit-op)
-    (setf (gethash 'DRAW inner) #'emit-op)
-    (setf (gethash 'BCD inner) #'emit-op)
-    (setf (gethash 'WRITE inner) #'emit-op)
-    (setf (gethash 'READ inner) #'emit-op)
-    (setf (gethash 'CLEAR inner) #'emit-op)
-    (setf (gethash 'RET inner) #'emit-op)
-    (setf (gethash 'CALL inner) #'emit-op)
-    (setf (gethash 'JUMP inner) #'emit-op)
-    (setf (gethash 'JUMP0 inner) #'emit-op)
-    (setf (gethash '+ inner) #'+)
-    (setf (gethash '- inner) #'-)
-    (setf (gethash '* inner) #'*)
-    (setf (gethash '/ inner) #'/)
-    (setf (gethash '% inner) #'mod)
-    (setf (gethash '&& inner) #'logand)
-    (setf (gethash '|| inner) #'logior)
-    (setf (gethash '^ inner) #'logxor)
-    (setf (gethash '<< inner) #'ash)
-    (setf (gethash '>> inner) #'(lambda (x y) (ash x (- y))))
-    (setf (gethash 'pow inner) #'expt)
-    (setf (gethash 'min inner) #'min)
-    (setf (gethash 'max inner) #'max)
-    (setf (gethash '< inner) #'(lambda (x y) (if (< x y) 1 0)))
-    (setf (gethash '<= inner) #'(lambda (x y) (if (<= x y) 1 0)))
-    (setf (gethash '== inner) #'(lambda (x y) (if (= x y) 1 0)))
-    (setf (gethash '!= inner) #'(lambda (x y) (if (/= x y) 1 0)))
-    (setf (gethash '>= inner) #'(lambda (x y) (if (>= x y) 1 0)))
-    (setf (gethash '> inner) #'(lambda (x y) (if (> x y) 1 0)))
-    (setf (gethash '~ inner) #'lognot)
-    (setf (gethash '! inner) #'(lambda (x) (if (zerop x) 1 0)))
-    (setf (gethash 'sin inner) #'sin)
-    (setf (gethash 'cos inner) #'cos)
-    (setf (gethash 'tan inner) #'tan)
-    (setf (gethash 'exp inner) #'exp)
-    (setf (gethash 'log inner) #'log)
-    (setf (gethash 'abs inner) #'abs)
-    (setf (gethash 'sqrt inner) #'sqrt)
-    (setf (gethash 'sign inner) #'(lambda (x) (if (plusp x) 1 -1)))
-    (setf (gethash 'ceil inner) #'ceiling)
-    (setf (gethash 'floor inner) #'floor)
-    
-
-    (setf (gethash 'BREAK inner) (lambda () '(BREAK)))
-
-    (list #x200 inner outer)))
-    
 (defun chip8-compile (file)
   (chip8-eval-top
    (parse (tokenize file))
-   (make-env)))
+   (make-env :inner *default-namespace*)))
 
 (defun chip8-write (bytes filename)
   (with-open-file (f filename
