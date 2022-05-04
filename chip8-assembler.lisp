@@ -118,7 +118,7 @@
         (outer (caddr env)))
     (cond (inner inner)
           (outer (chip8-eval-var exp outer))
-          (t exp))))
+          (t (list exp nil)))))
 
 (defun rotate-main (exps)
   "Ensures that the code above 'lab main' is always at the end"
@@ -172,6 +172,7 @@
   (cond
     ((null exps) nil)
     ((atom exps) (list exps))
+    ((null (second exps)) (error "invalid var found in: '~a'" (first exps)))
     (t (mapcan (lambda (x) (process-labels (chip8-eval x env) env)) exps))))
 
 (defun chip8-eval-file (exps env)
@@ -185,20 +186,19 @@
         (args (caddr exp))
         (body (cdddr exp)))
     (setf (gethash name (cadr env))
-          (eval `(lambda (&rest vars)
-                   (let ((inner-env (make-env ',(copy-list env))))
-                     (mapcar (lambda (arg var)
-                               (setf (gethash arg (cadr inner-env)) var))
-                             ',args vars)
-                     (chip8-eval-file ',body inner-env))))))
+          (lambda (&rest vars)
+                  (let ((inner-env (make-env (copy-list env))))
+                    (mapcar (lambda (arg var)
+                              (setf (gethash arg (cadr inner-env)) var))
+                            args vars)
+                    (chip8-eval-file body inner-env)))))
   nil)
 
 (defun chip8-eval-proc (exp env)
   (let ((name (cadr exp))
-        (body (chip8-eval-file (cddr exp) env)))
+        (body (cddr exp)))
     (chip8-eval `(lab ,name) env)
-    (append body
-            (unless (eq name 'main) (chip8-eval '(ret) env)))))
+    (append (chip8-eval-file body env) (unless (eq name 'main) (chip8-eval '(ret) env)))))
 
 (defun chip8-eval-top (exps env)
   (process-labels (chip8-eval-file (rotate-main exps) env) env))
@@ -315,7 +315,7 @@
            ('(CALL N) '(#x2000 #x0))
            ('(JUMP N) '(#x1000 #x0))
            ('(JUMP0 N) '(#xB000 #x0))
-           (_ '(0 0)))))))
+           (_ (error "that's not an instruction")))))))
 
 
 

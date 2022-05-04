@@ -6,12 +6,32 @@ def S #x8
 def A #x7
 def D #x9
 
-include person #x70 #x70 #x20 #x70 #xA8 #x20 #x50 #x50
+include up #x70 #x70 #x20 #x70 #xA8 #x20 #x50 #x50
+include down #x50 #x50 #x20 #xA8 #x70 #x20 #x70 #x70
+
+(proc if-w-pressed
+  set i up
+  add py #xFF)
+
+(proc if-s-pressed
+  set i down
+  add py 1)
+  
+(proc if-a-pressed
+  set i up
+  add px #xFF)
+
+(proc if-d-pressed
+  set i up
+  add px 1)
+
+
+
 
 (proc main
   rand px #b0011111
   rand py #b0001111
-  set i person
+  set i up  
   draw px py 8
 
   (loop
@@ -19,19 +39,19 @@ include person #x70 #x70 #x20 #x70 #xA8 #x20 #x50 #x50
 
     set v0 W
     eq v0 key
-      add py #xFF
+      call if-w-pressed
 
     set v0 S
     eq v0 key
-      add py 1
+      call if-s-pressed
 
     set v0 A
     eq v0 key
-      add px #xFF
+      call if-a-pressed
 
     set v0 D
     eq v0 key
-      add px 1
+      call if-d-pressed
 
     draw px py 8
 
