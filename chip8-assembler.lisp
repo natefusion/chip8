@@ -195,7 +195,7 @@
     (if (assoc name (env-inner env))
         (error "macro redefinition of '~a'" name)
         (push (cons name (lambda (&rest vars)
-                           (let ((new-env (make-env :outer (copy-list (env-inner env)))))
+                           (let ((new-env (make-env :outer env)))
                              (mapcar (lambda (arg var) (push (cons arg var) (env-inner new-env))) args vars)
                              (chip8-eval-file body new-env))))
               (env-inner env)))
