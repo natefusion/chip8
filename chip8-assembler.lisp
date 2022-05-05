@@ -2,30 +2,48 @@
   (ql:quickload :trivia)
   (use-package :trivia))
 
-(defun parse (l)
-  (eval (read-from-string (concatenate 'string "'(" l ")"))))
-
 (defun flatten (l)
   (apply #'concatenate 'string l))
 
-(defun make-sexp (s)
-  (let ((trim (string-trim " " s)))
-    (if (and (string/= (subseq trim 0 1) "(")
-             (string/= (subseq trim 0 1) ")"))
-        (concatenate 'string "(" trim ") ")
-        (concatenate 'string trim " "))))
+;; This works but could be better
+(defun make-sexp (line)
+  (loop :for ch :across line
+        :for count :from 0
+        :with result = (make-array 0 :element-type 'character :fill-pointer 0 :adjustable t)
+        :with paren-added? = nil        ; gay
+        :if (and (zerop count) (char/= #\( ch))
+          :do (progn (setf paren-added? t)
+                     (vector-push-extend #\( result))
+        :if (char= #\, ch)
+          :do (progn (vector-push-extend #\) result)
+                     (vector-push-extend #\( result))
+        :else
+          :do (vector-push-extend ch result)
+        :finally
+           (return (progn (when paren-added?
+                            (vector-push-extend #\) result))
+                          result))))
 
-;; comment dont actually work, pls fix
-(defun remove-blank (l)
-  (remove-if
-   (lambda (x) (or (string= (string-trim " " x) "")
-                   (string= (subseq (string-trim " " x) 0 1) ";")))
-     l))
+(defun remove-comments (line)
+  (let ((comment-index (position #\; line :test #'char=)))
+    (if (null comment-index)
+        line
+        (subseq line 0 comment-index))))
 
-(defun tokenize (x)
-  (flatten
-    (mapcar #'make-sexp
-            (remove-blank (uiop/stream:read-file-lines x)))))
+(defun scrub-input (input)
+  (loop :for line :in input
+        :for trimmed = (remove-comments (string-trim " " line))
+
+        :unless (string= "" trimmed)
+          :collect trimmed))
+
+(defun parse (x)
+  (eval (read-from-string
+         (concatenate 'string
+               "'("
+               (flatten
+                (mapcar #'make-sexp (scrub-input (uiop:read-file-lines x))))
+               ")"))))
 
 (defstruct env (pc #x202) inner outer)
 
@@ -337,7 +355,7 @@
 
 (defun chip8-compile (file)
   (chip8-eval-top
-   (parse (tokenize file))
+   (parse file)
    (make-env :inner *default-namespace*)))
 
 (defun chip8-write (bytes filename)

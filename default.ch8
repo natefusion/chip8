@@ -6,8 +6,7 @@ def S #x8
 def A #x7
 def D #x9
 
-
-
+; this is a comment
 (proc main
   rand px #b0011111
   rand py #b0001111
@@ -15,23 +14,20 @@ def D #x9
   draw px py 8
 
   (loop
-    draw px py 8
+    draw px py 8 ; this is another comment
 
-    set v0 W
-    eq v0 key
-      call if-w-pressed
+    ; commas can be used to put more than one statement on one line without parens
+    set v0 W , eq v0 key
+    call if-w-pressed
 
-    set v0 S
-    eq v0 key
-      call if-s-pressed
+    (set v0 S) (eq v0 key)
+    call if-s-pressed
 
-    set v0 A
-    eq v0 key
-      call if-a-pressed
+    set v0 A , eq v0 key
+    call if-a-pressed
 
     set v0 D
-    eq v0 key
-      call if-d-pressed
+    eq v0 key , call if-d-pressed
 
     draw px py 8
 
