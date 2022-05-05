@@ -129,29 +129,6 @@
           (outer (chip8-eval-var exp outer))
           (t exp))))
 
-(defun rotate-main (exps)
-  "Ensures that the code above 'lab main' is always at the end"
-  (let ((main-label (loop :for x :in exps
-                          :for pos :from 0
-                          :if (equal '(proc main) (list (first x) (second x)))
-                            :return pos)))
-    (if main-label
-        ;; defs should be kept at the beginning
-        ;; everything else should be put at the end
-        (let ((before-main
-                (reduce (lambda (a b)
-                          (if (or (def? a) (macro? a))
-                              (push a (first b))
-                              (push a (second b)))
-                          b)
-                        (reverse (nthcdr (- (length exps) main-label) (reverse exps)))
-                        :initial-value (list nil nil)
-                        :from-end t)))
-          (append (car before-main)
-                  (nthcdr main-label exps)
-                  (cadr before-main)))
-        (error "put main pls"))))
-
 ;; These functions have circular depedencies to chip8-eval
 (declaim (ftype function
                 chip8-eval-application
