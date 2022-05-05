@@ -177,10 +177,12 @@
         (t (error "wow you did something bad"))))
 
 (defun chip8-eval-file (exps env)
-  (cond
-    ((null exps) nil)
-    (t (append (chip8-eval (first exps) env)
-               (chip8-eval-file (rest exps) env)))))
+  (if (null exps)
+      nil
+      (let* ((x (chip8-eval (first exps) env))
+             (y (if (and (not (null x)) (atom x))
+                    (list x) x)))
+        (append y (chip8-eval-file (rest exps) env)))))
 
 (defun chip8-eval-macro (exp env)
   (let ((name (second exp))
@@ -206,19 +208,12 @@
     (append (chip8-eval-file body env) (unless (eq name 'main) (chip8-eval '(ret) env)))))
 
 (defun chip8-eval-top (exps env)
-  (loop :for x :in (chip8-eval-file exps env)
-        ;; Evals a second time to resolve any unresolved labels
-        :for y = (chip8-eval x env)
-        :if (listp y)
-          ;; Removes nesting
-          :append y :into final
-        :else
-          :collect y :into final
-        :finally
-           (return (let ((main-label (cdr (assoc 'main (env-inner env)))))
-                     (append (unless (= main-label #x200)
-                               (chip8-eval `(JUMP ,main-label) env))
-                             final)))))
+  ;; Eval two times to resolve anything left uncompiled
+  (let* ((binary (chip8-eval-file (chip8-eval-file exps env) env))
+         (main-label (cdr (assoc 'main (env-inner env))))
+         (jump-to-main? (unless (= main-label #x200)
+                          (chip8-eval `(JUMP ,main-label) env))))
+    (append jump-to-main? binary)))
 
 (defun chip8-eval-unpack (exp env)
   ;; TODO: doesn't handle 16-bit addresses
