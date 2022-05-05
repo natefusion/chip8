@@ -256,8 +256,10 @@
   
   (let ((stripped-args
           (remove-if #'builtin-var? (chip8-eval-args-partial args env :eval-v t))))
-    (if (not (null (remove-if #'numberp stripped-args)))
+    
+    (if (remove-if #'numberp stripped-args)
         (list (cons proc args))
+        
         (combine-op
          stripped-args
          
