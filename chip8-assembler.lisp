@@ -266,7 +266,7 @@
            ('(EQ V N) '(#x4000 #x8))
            ('(EQ V KEY) '(#xE0A1 #x8))
            
-           ('(NEQ V KEY) '(#xE09E Ex81))
+           ('(NEQ V KEY) '(#xE09E #x81))
            ('(NEQ V V) '(#x5000 #x48))
            ('(NEQ V N) '(#x3000 #x8))
            
