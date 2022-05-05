@@ -200,7 +200,7 @@
         (body (cddr exp)))
     ;; PC should start at #x202 to make room for the jump to main unless the program starts with main
     (when (and (= #x202 (env-pc env)) (eq name 'main))
-      (decf (env-pc env) 2))
+      (setf (env-pc env) #x200))
 
     (chip8-eval `(lab ,name) env)
     (append (chip8-eval-file body env) (unless (eq name 'main) (chip8-eval '(ret) env)))))
