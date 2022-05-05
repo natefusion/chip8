@@ -6,26 +6,6 @@ def S #x8
 def A #x7
 def D #x9
 
-include up #x70 #x70 #x20 #x70 #xA8 #x20 #x50 #x50
-include down #x50 #x50 #x20 #xA8 #x70 #x20 #x70 #x70
-
-(proc if-w-pressed
-  set i up
-  add py #xFF)
-
-(proc if-s-pressed
-  set i down
-  add py 1)
-  
-(proc if-a-pressed
-  set i up
-  add px #xFF)
-
-(proc if-d-pressed
-  set i up
-  add px 1)
-
-
 
 
 (proc main
@@ -61,5 +41,26 @@ include down #x50 #x50 #x20 #xA8 #x70 #x20 #x70 #x70
 
     set ve 3
     set dt ve))
+    
+include up #x70 #x70 #x20 #x70 #xA8 #x20 #x50 #x50
+include down #x50 #x50 #x20 #xA8 #x70 #x20 #x70 #x70
+
+(proc if-w-pressed
+  set i up
+  add py #xFF)
+
+(proc if-s-pressed
+  set i down
+  add py 1)
+  
+(proc if-a-pressed
+  set i up
+  add px #xFF)
+
+(proc if-d-pressed
+  set i up
+  add px 1)
+
+
 
 

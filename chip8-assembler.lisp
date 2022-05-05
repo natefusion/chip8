@@ -27,7 +27,7 @@
     (mapcar #'make-sexp
             (remove-blank (uiop/stream:read-file-lines x)))))
 
-(defstruct env (pc #x200) inner outer)
+(defstruct env (pc #x202) inner outer)
 
 (defun chip8-eval-v? (exp)
   (match exp
@@ -198,18 +198,27 @@
 (defun chip8-eval-proc (exp env)
   (let ((name (second exp))
         (body (cddr exp)))
+    ;; PC should start at #x202 to make room for the jump to main unless the program starts with main
+    (when (and (= #x202 (env-pc env)) (eq name 'main))
+      (decf (env-pc env) 2))
+
     (chip8-eval `(lab ,name) env)
     (append (chip8-eval-file body env) (unless (eq name 'main) (chip8-eval '(ret) env)))))
 
 (defun chip8-eval-top (exps env)
-  (loop :for x :in (chip8-eval-file (rotate-main exps) env)
+  (loop :for x :in (chip8-eval-file exps env)
         ;; Evals a second time to resolve any unresolved labels
         :for y = (chip8-eval x env)
         :if (listp y)
           ;; Removes nesting
-          :append y
+          :append y :into final
         :else
-          :collect y))
+          :collect y :into final
+        :finally
+           (return (let ((main-label (cdr (assoc 'main (env-inner env)))))
+                     (append (unless (= main-label #x200)
+                               (chip8-eval `(JUMP ,main-label) env))
+                             final)))))
 
 (defun chip8-eval-unpack (exp env)
   ;; TODO: doesn't handle 16-bit addresses
@@ -236,13 +245,12 @@
 (defun chip8-eval-loop (exp env)
   (let ((label (env-pc env))
         (loop-body (chip8-eval-file (rest exp) env)))
-    (append
-     (loop :for x :in loop-body
+    (loop :for x :in loop-body
            :if (eq x 'BREAK)
-             :append (chip8-eval `(JUMP ,(+ 4 (env-pc env))) env)
+             :append (chip8-eval `(JUMP ,(+ 4 (env-pc env))) env) :into final
            :else
-             :collect x)
-     (chip8-eval `(JUMP ,label) env))))
+             :collect x :into final
+          :finally (return (append final (chip8-eval `(JUMP ,label) env))))))
 
 (defun chip8-eval-include (exp env)
   (let ((name (second exp))
