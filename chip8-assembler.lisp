@@ -176,12 +176,6 @@
         ((application? exp) (chip8-eval-application exp env))
         (t (error "wow you did something bad"))))
 
-(defun remove-nesting (exps)
-  "Flattens list"
-  (cond ((null exps) nil)
-        ((atom exps) (list exps))
-        (t (mapcan (lambda (x) (remove-nesting x)) exps))))
-
 (defun chip8-eval-file (exps env)
   (cond
     ((null exps) nil)
@@ -208,7 +202,14 @@
     (append (chip8-eval-file body env) (unless (eq name 'main) (chip8-eval '(ret) env)))))
 
 (defun chip8-eval-top (exps env)
-  (remove-nesting (mapcar (lambda (x) (chip8-eval x env) ) (chip8-eval-file (rotate-main exps) env))))
+  (loop :for x :in (chip8-eval-file (rotate-main exps) env)
+        ;; Evals a second time to resolve any unresolved labels
+        :for y = (chip8-eval x env)
+        :if (listp y)
+          ;; Removes nesting
+          :append y
+        :else
+          :collect y))
 
 (defun chip8-eval-unpack (exp env)
   ;; TODO: doesn't handle 16-bit addresses
