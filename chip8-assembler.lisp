@@ -328,7 +328,7 @@
            ('(JUMP0 N) '(#xB000 #x0))
            (_ (error "Invalid instruction '~a'" proc)))))))
 
-(defparameter *default-namespace*
+(defun default-namespace ()
   `((PC    .  #x202)
     (EQ    . ,#'emit-op)
     (NEQ   . ,#'emit-op)
@@ -360,7 +360,7 @@
 (defun chip8-compile (file)
   (chip8-eval-top
    (parse file)
-   (make-env :inner *default-namespace*)))
+   (make-env :inner (default-namespace))))
 
 (defun chip8-write (bytes filename)
   (with-open-file (f filename
