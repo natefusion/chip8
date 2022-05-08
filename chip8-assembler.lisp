@@ -25,10 +25,7 @@
                           result))))
 
 (defun remove-comments (line)
-  (let ((comment-index (position #\; line :test #'char=)))
-    (if (null comment-index)
-        line
-        (subseq line 0 comment-index))))
+  (subseq line 0 (position #\; line :test #'char=)))
 
 (defun scrub-input (input)
   (loop :for line :in input
@@ -45,7 +42,13 @@
                 (mapcar #'make-sexp (scrub-input (uiop:read-file-lines x))))
                ")"))))
 
-(defstruct env (pc #x202) inner outer)
+(defstruct env inner outer)
+
+(defun env-pc (env)
+  (cdr (assoc 'pc (env-inner env))))
+
+(defmethod (setf env-pc) (new-val (obj env))
+  (setf (cdr (assoc 'pc (env-inner obj))) new-val))
 
 (defun chip8-eval-v? (exp)
   (match exp
@@ -326,7 +329,8 @@
            (_ (error "Invalid instruction '~a'" proc)))))))
 
 (defparameter *default-namespace*
-  `((EQ    . ,#'emit-op)
+  `((PC    .  #x202)
+    (EQ    . ,#'emit-op)
     (NEQ   . ,#'emit-op)
     (SET   . ,#'emit-op)
     (ADD   . ,#'emit-op)
