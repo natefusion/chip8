@@ -17,11 +17,11 @@
         :if (char= #\, ch)
           :do (progn (vector-push-extend #\) result)
                      (vector-push-extend #\( result))
-        :if (char= #\. ch)
+        :else :if (char= #\. ch)
           :do (progn (incf parens-to-add)
                      (vector-push-extend #\( result))
-          :else
-            :do (vector-push-extend ch result)
+        :else
+          :do (vector-push-extend ch result)
         :finally
            (return (dotimes (x parens-to-add result)
                      (vector-push-extend #\) result)))))
