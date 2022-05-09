@@ -39,18 +39,12 @@
 (defun parse (x)
   (eval (read-from-string
          (concatenate 'string
-               "'("
-               (flatten
-                (mapcar #'make-sexp (scrub-input (uiop:read-file-lines x))))
-               ")"))))
+                      "'("
+                      (flatten
+                       (mapcar #'make-sexp (scrub-input (uiop:read-file-lines x))))
+                      ")"))))
 
-(defstruct env inner outer)
-
-(defun env-pc (env)
-  (cdr (assoc 'pc (env-inner env))))
-
-(defmethod (setf env-pc) (new-val (obj env))
-  (setf (cdr (assoc 'pc (env-inner obj))) new-val))
+(defstruct env namespace)
 
 (defun chip8-eval-v? (exp)
   (match exp
@@ -133,26 +127,31 @@
 (defun chip8-eval-def (exp env)
   (let ((name (second exp))
         (value (third exp)))
-    (cond ((assoc name (env-inner env)) (error "def Redefinition of '~a'" name))
+    (cond ((assoc name (env-namespace env)) (error "def Redefinition of '~a'" name))
           ((null value) (error "'def ~a' was not initialized" name)) 
-          (t (push (cons name value) (env-inner env))))
+          (t (push (cons name (chip8-eval value env)) (env-namespace env))))
     nil))
+
+(defun env-pc (env)
+  (cdr (assoc 'pc (env-namespace env))))
+
+(defmethod (setf env-pc) (new-val (obj env))
+  (setf (cdr (assoc 'pc (env-namespace obj))) new-val))
 
 (defun chip8-eval-label (exp env)
   (let ((name (second exp)))
-    (if (assoc name (env-inner env))
+    (if (assoc name (env-namespace env))
         (error "label Redefinition of '~a'" name)
-        (push (cons name (env-pc env)) (env-inner env)))
+        (push (cons name (env-pc env)) (env-namespace env)))
     nil))
 
 (defun chip8-eval-var (exp env)
-  (let ((inner (assoc exp (env-inner env)))
-        (outer (env-outer env)))
-    (cond (inner (cdr inner))
-          (outer (chip8-eval-var exp outer))
-          (t exp))))
+  (let ((x (cdr (assoc exp (env-namespace env)))))
+    (if x x exp)))
 
-;; These functions have circular depedencies to chip8-eval
+;; Th(defun chip8-eval-var (exp env)
+  (let ((x (cdr (assoc exp (env-namespace env)))))
+    (if x x exp)))ese functions have circular depedencies to chip8-eval
 (declaim (ftype function
                 chip8-eval-application
                 chip8-eval-include
@@ -188,13 +187,12 @@
   (let ((name (second exp))
         (args (third exp))
         (body (cdddr exp)))
-    (if (assoc name (env-inner env))
+    (if (assoc name (env-namespace env))
         (error "macro redefinition of '~a'" name)
-        (push (cons name (lambda (&rest vars)
-                           (let ((new-env (make-env :outer env)))
-                             (mapcar (lambda (arg var) (push (cons arg var) (env-inner new-env))) args vars)
-                             (chip8-eval-file body new-env))))
-              (env-inner env)))
+        (push (cons name
+                    (lambda (&rest vars)
+                      (chip8-eval-file body (make-env :namespace (pairlis args vars (env-namespace env))))))
+              (env-namespace env)))
     nil))
 
 (defun chip8-eval-proc (exp env)
@@ -210,7 +208,7 @@
 (defun chip8-eval-top (exps env)
   ;; Eval two times to resolve anything left uncompiled
   (let* ((binary (chip8-eval-file (chip8-eval-file exps env) env))
-         (main-label (cdr (assoc 'main (env-inner env))))
+         (main-label (cdr (assoc 'main (env-namespace env))))
          (jump-to-main? (unless (= main-label #x200)
                           (chip8-eval `(JUMP ,main-label) env))))
     (append jump-to-main? binary)))
@@ -262,12 +260,12 @@
 (defun chip8-eval-application (exp env)
   ;; Do I want to eval v registers here???
   (apply (chip8-eval (first exp) env)
-         (chip8-eval-args-partial (rest exp) env :eval-v t)))
+         (chip8-eval-args-partial (rest exp) env)))
 
 (defun combine-op (args shell&info)
   (let ((shell (car shell&info))
         (info (cadr shell&info)))
-    (loop :for x :in args
+    (loop :for x :in (mapcar #'truncate args)
           :for i :from 0
           :do (let ((shift (logand (ash info (* i -4)) #xF)))
                 (setf shell (logior shell (ash x shift))))
@@ -331,38 +329,39 @@
            (_ (error "Invalid instruction '~a'" proc)))))))
 
 (defun default-namespace ()
-  `((PC    .  #x202)
-    (EQ    . ,#'emit-op)
-    (NEQ   . ,#'emit-op)
-    (SET   . ,#'emit-op)
-    (ADD   . ,#'emit-op)
-    (OR    . ,#'emit-op)
-    (AND   . ,#'emit-op)
-    (XOR   . ,#'emit-op)
-    (SUB   . ,#'emit-op)
-    (SHR   . ,#'emit-op)
-    (SUBR  . ,#'emit-op)
-    (SHL   . ,#'emit-op)
-    (RAND  . ,#'emit-op)
-    (DRAW  . ,#'emit-op)
-    (BCD   . ,#'emit-op)
-    (WRITE . ,#'emit-op)
-    (READ  . ,#'emit-op)
-    (CLEAR . ,#'emit-op)
-    (RET   . ,#'emit-op)
-    (CALL  . ,#'emit-op)
-    (JUMP  . ,#'emit-op)
-    (JUMP0 . ,#'emit-op)
-    (BREAK . ,#'(lambda () '(BREAK)))
-    (+ . ,#'+)
-    (- . ,#'-)
-    (* . ,#'*)
-    (/ . ,#'/)))
+  (copy-alist
+   `((PC    .  #x202)
+     (EQ    . ,#'emit-op)
+     (NEQ   . ,#'emit-op)
+     (SET   . ,#'emit-op)
+     (ADD   . ,#'emit-op)
+     (OR    . ,#'emit-op)
+     (AND   . ,#'emit-op)
+     (XOR   . ,#'emit-op)
+     (SUB   . ,#'emit-op)
+     (SHR   . ,#'emit-op)
+     (SUBR  . ,#'emit-op)
+     (SHL   . ,#'emit-op)
+     (RAND  . ,#'emit-op)
+     (DRAW  . ,#'emit-op)
+     (BCD   . ,#'emit-op)
+     (WRITE . ,#'emit-op)
+     (READ  . ,#'emit-op)
+     (CLEAR . ,#'emit-op)
+     (RET   . ,#'emit-op)
+     (CALL  . ,#'emit-op)
+     (JUMP  . ,#'emit-op)
+     (JUMP0 . ,#'emit-op)
+     (BREAK . ,#'(lambda () '(BREAK)))
+     (+ . ,#'+)
+     (- . ,#'-)
+     (* . ,#'*)
+     (/ . ,#'/))))
 
 (defun chip8-compile (file)
   (chip8-eval-top
    (parse file)
-   (make-env :inner (default-namespace))))
+   (make-env :namespace (default-namespace))))
 
 (defun chip8-write (bytes filename)
   (with-open-file (f filename
