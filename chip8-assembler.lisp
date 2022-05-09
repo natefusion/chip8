@@ -124,34 +124,29 @@
   (and (listp exp)
        (eq (first exp) 'PROC)))
 
-(defun chip8-eval-def (exp env)
-  (let ((name (second exp))
-        (value (third exp)))
-    (cond ((assoc name (env-namespace env)) (error "def Redefinition of '~a'" name))
-          ((null value) (error "'def ~a' was not initialized" name)) 
-          (t (push (cons name (chip8-eval value env)) (env-namespace env))))
-    nil))
-
 (defun env-pc (env)
   (cdr (assoc 'pc (env-namespace env))))
 
 (defmethod (setf env-pc) (new-val (obj env))
   (setf (cdr (assoc 'pc (env-namespace obj))) new-val))
 
+(defun in-scope? (value namespace)
+  (let ((scope-separator (position 'scope-separator (reverse namespace) :key #'car)))
+    (if scope-separator
+        (when (assoc value (butlast namespace scope-separator)) t)
+        (when (assoc value namespace) t))))
+
 (defun chip8-eval-label (exp env)
   (let ((name (second exp)))
-    (if (assoc name (env-namespace env))
-        (error "label Redefinition of '~a'" name)
+    (if (in-scope? name (env-namespace env))
+        (error "label redefinition of '~a'" name)
         (push (cons name (env-pc env)) (env-namespace env)))
     nil))
 
 (defun chip8-eval-var (exp env)
-  (let ((x (cdr (assoc exp (env-namespace env)))))
-    (if x x exp)))
+  (let ((x (assoc exp (env-namespace env))))
+    (if x (cdr x) exp)))
 
-;; Th(defun chip8-eval-var (exp env)
-  (let ((x (cdr (assoc exp (env-namespace env)))))
-    (if x x exp)))ese functions have circular depedencies to chip8-eval
 (declaim (ftype function
                 chip8-eval-application
                 chip8-eval-include
@@ -159,7 +154,8 @@
                 chip8-eval-loop
                 chip8-eval-macro
                 chip8-eval-unpack
-                chip8-eval-proc))
+                chip8-eval-proc
+                chip8-eval-def))
 
 (defun chip8-eval (exp env)
   (cond ((self-evaluating? exp) exp)
@@ -175,6 +171,14 @@
         ((application? exp) (chip8-eval-application exp env))
         (t (error "wow you did something bad"))))
 
+(defun chip8-eval-def (exp env)
+  (let ((name (second exp))
+        (value (third exp)))
+    (cond ((null value) (error "'def ~a' was not initialized" name))
+          ((in-scope? name (env-namespace env)) (error "def redefinition of '~a'" name))
+          (t (push (cons name (chip8-eval value env)) (env-namespace env))))
+    nil))
+
 (defun chip8-eval-file (exps env)
   (if (null exps)
       nil
@@ -182,6 +186,11 @@
              (y (if (and (not (null x)) (atom x))
                     (list x) x)))
         (append y (chip8-eval-file (rest exps) env)))))
+
+(defun make-scope (namespace &optional keys data)
+  (make-env :namespace (pairlis (append '(scope-separator) keys)
+                                (append '(nil) data)
+                                namespace)))
 
 (defun chip8-eval-macro (exp env)
   (let ((name (second exp))
@@ -191,7 +200,7 @@
         (error "macro redefinition of '~a'" name)
         (push (cons name
                     (lambda (&rest vars)
-                      (chip8-eval-file body (make-env :namespace (pairlis args vars (env-namespace env))))))
+                      (chip8-eval-file body (make-scope (env-namespace env) args vars))))
               (env-namespace env)))
     nil))
 
@@ -203,7 +212,8 @@
       (setf (env-pc env) #x200))
 
     (chip8-eval `(lab ,name) env)
-    (append (chip8-eval-file body env) (unless (eq name 'main) (chip8-eval '(ret) env)))))
+    (append (chip8-eval-file body (make-scope (env-namespace env)))
+            (unless (eq name 'main) (chip8-eval '(ret) env)))))
 
 (defun chip8-eval-top (exps env)
   ;; Eval two times to resolve anything left uncompiled
