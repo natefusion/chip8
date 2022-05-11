@@ -183,7 +183,7 @@
   (if (null exps)
       nil
       (let* ((x (chip8-eval (first exps) env))
-             (y (if (and (not (null x)) (atom x))
+             (y (if (and x (atom x))
                     (list x) x)))
         (append y (chip8-eval-file (rest exps) env)))))
 
