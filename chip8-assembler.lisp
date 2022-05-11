@@ -47,21 +47,17 @@
 (defstruct env namespace)
 
 (defun chip8-eval-v? (exp)
-  (match exp
-    ('V0 0) ('V1 1) ('V2 2) ('V3 3)
-    ('V4 4) ('V5 5) ('V6 6) ('V7 7)
-    ('V8 8) ('V9 9) ('VA #xA) ('VB #xB)
-    ('VC #xC) ('VD #xD) ('VE #xE) ('VF #xF)
-    (t nil)))
+  (case exp
+    (V0 0) (V1 1) (V2 2) (V3 3)
+    (V4 4) (V5 5) (V6 6) (V7 7)
+    (V8 8) (V9 9) (VA #xA) (VB #xB)
+    (VC #xC) (VD #xD) (VE #xE) (VF #xF)))
 
 (defun v? (exp)
   (not (null (chip8-eval-v? exp))))
 
 (defun builtin-var? (exp)
-  (or (eq exp 'KEY)
-      (eq exp 'ST)
-      (eq exp 'DT)
-      (eq exp 'I)))
+  (case exp ((KEY ST DT I) t)))
 
 (defun self-evaluating? (exp)
   (and (not (listp exp))
@@ -77,14 +73,13 @@
 
 (defun ins? (exp)
   (and (listp exp)
-       (match (first exp)
-         ('EQ 't) ('NEQ 't) ('SET 't) ('ADD 't)
-         ('OR 't) ('AND 't) ('XOR 't) ('SUB 't)
-         ('SHR 't) ('SUBR 't) ('SHL 't) ('RAND 't)
-         ('DRAW 't) ('BCD 't) ('WRITE 't) ('READ 't)
-         ('CLEAR 't) ('RET 't) ('CALL 't) ('JUMP 't)
-         ('JUMP0 't)
-         (_ nil))))
+       (case (first exp)
+         ((EQ NEQ SET ADD OR AND
+              XOR SUB SHR SUBR
+              SHL RAND DRAW BCD
+              WRITE READ CLEAR
+              RET CALL JUMP JUMP0)
+          t))))
 
 (defun def? (exp)
   (and (listp exp)
