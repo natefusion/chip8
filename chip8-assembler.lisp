@@ -71,16 +71,6 @@
     ((builtin-var? exp) exp)
     (t 'N)))
 
-(defun ins? (exp)
-  (and (listp exp)
-       (case (first exp)
-         ((EQ NEQ SET ADD OR AND
-              XOR SUB SHR SUBR
-              SHL RAND DRAW BCD
-              WRITE READ CLEAR
-              RET CALL JUMP JUMP0)
-          t))))
-
 (defun def? (exp)
   (and (listp exp)
        (eq (first exp) 'DEF)))
@@ -145,7 +135,6 @@
 (declaim (ftype function
                 chip8-eval-application
                 chip8-eval-include
-                chip8-eval-ins
                 chip8-eval-loop
                 chip8-eval-macro
                 chip8-eval-unpack
@@ -162,7 +151,6 @@
         ((include? exp) (chip8-eval-include exp env))
         ((unpack? exp) (chip8-eval-unpack exp env))
         ((macro? exp) (chip8-eval-macro exp env))
-        ((ins? exp) (chip8-eval-ins exp env))
         ((application? exp) (chip8-eval-application exp env))
         (t (error "wow you did something bad"))))
 
@@ -194,7 +182,7 @@
     (if (assoc name (env-namespace env))
         (error "macro redefinition of '~a'" name)
         (push (cons name
-                    (lambda (&rest vars)
+                    (lambda (env &rest vars)
                       (chip8-eval-file body (make-scope (env-namespace env) args vars))))
               (env-namespace env)))
     nil))
@@ -234,12 +222,6 @@
                 (chip8-eval x env)))
           args))
 
-(defun chip8-eval-ins (exp env)
-  (funcall (chip8-eval (first exp) env)
-           (first exp)
-           (chip8-eval-args-partial (rest exp) env)
-           env))
-
 (defun chip8-eval-loop (exp env)
   (let ((label (env-pc env))
         (loop-body (chip8-eval-file (rest exp) env)))
@@ -265,98 +247,110 @@
 (defun chip8-eval-application (exp env)
   ;; Do I want to eval v registers here???
   (apply (chip8-eval (first exp) env)
+         env
          (chip8-eval-args-partial (rest exp) env)))
 
-(defun combine-op (args shell&info)
-  (let ((shell (car shell&info))
-        (info (cadr shell&info)))
-    (loop :for x :in (mapcar #'truncate args)
-          :for i :from 0
-          :do (let ((shift (logand (ash info (* i -4)) #xF)))
-                (setf shell (logior shell (ash x shift))))
-          :finally (return (list (ash (logand shell #xFF00) -8)
-                                 (logand shell #xFF))))))
+(defun to-bytes (num)
+  (loop :for n :across (format nil "~x" num)
+        :collect (parse-integer (string n) :radix 16)))
 
-(defun emit-op (proc args env)
-  (incf (env-pc env) 2)
-  
-  (let ((stripped-args
-          (remove-if #'builtin-var? (chip8-eval-args-partial args env :eval-v t))))
-    
-    (if (remove-if #'numberp stripped-args)
-        (list (cons proc args))
-        
-        (combine-op
-         stripped-args
-         
-         (match (append (list proc) (mapcar #'chip8-type args))
-           ('(EQ V V) '(#x9000 #x48))
-           ('(EQ V N) '(#x4000 #x8))
-           ('(EQ V KEY) '(#xE0A1 #x8))
-           
-           ('(NEQ V KEY) '(#xE09E #x8))
-           ('(NEQ V V) '(#x5000 #x48))
-           ('(NEQ V N) '(#x3000 #x8))
-           
-           ('(SET V N) '(#x6000 #x8))
-           ('(SET V V) '(#x8000 #x48))
-           ('(SET I N) '(#xA000 #x0))
-           ('(SET V DT) '(#xF007 #x8))
-           ('(SET DT V) '(#xF015 #x8))
-           ('(SET V ST) '(#xF018 #x8))
-           ('(SET I V) '(#xF029 #x8))
-           ('(SET V KEY) '(#xF00A #x8))
-           
-           ('(ADD V N) '(#x7000 #x8))
-           ('(ADD V V) '(#x8004 #x48))
-           ('(ADD I V) '(#xF01E #x8))
-           
-           ('(OR V V) '(#x8001 #x48))
-           ('(AND V V) '(#x8002 #x48))
-           ('(XOR V V) '(#x8003 #x48))
-           ('(SUB V V) '(#x8005 #x48))
-           ('(SHR V V) '(#x8006 #x48))
-           ('(SUBR V V) '(#x8007 #x48))
-           ('(SHL V V) '(#x800E #x48))
-           
-           ('(RAND V N) '(#xC000 #x8))
-           ('(DRAW V V N) '(#xD000 #x48))
-           
-           ('(BCD V) '(#xF033 #x8))
-           ('(WRITE V) '(#xF055 #x8))
-           ('(READ V) '(#xF065 #x8))
-           
-           ('(CLEAR) '(#x00E0 #x0))
-           ('(RET) '(#x00EE #x0))
-           ('(CALL N) '(#x2000 #x0))
-           ('(JUMP N) '(#x1000 #x0))
-           ('(JUMP0 N) '(#xB000 #x0))
-           (_ (error "Invalid instruction '~a'" proc)))))))
+(defun combine-op (shell args)
+  (loop :for x :in shell
+        :append (to-bytes
+                 (case x
+                   ((x nnn) (first args))
+                   (kk (first (last args)))
+                   (y (second args))
+                   (n (third args))
+                   (otherwise x)))))
+
+(defun emit-op (shell)
+  (loop :for byte :in shell
+        :for shift :in (case (length shell) (2 '(12 0)) (3 '(12 8 0)) (4 '(12 8 4 0)))
+        :with op := 0
+        :do (setf op (logior op (ash byte shift)))
+        :finally (return (list (ash (logand op #xFF00) -8)
+                               (logand op #xFF)))))
+
+(defmacro make-instruction (name &rest alist)
+  `(defun ,name (env &rest args)
+     (let* ((cleaned (remove-if #'builtin-var? (chip8-eval-args-partial args env :eval-v t)))
+            (shell (combine-op (cdr (assoc (mapcar #'chip8-type args) ',alist :test #'equal)) cleaned)))
+       (incf (env-pc env) 2)
+       (cond ((null shell) (error "wat: ~a" args))
+             ((remove-if #'numberp cleaned) (list (cons ',name args)))
+             (t (emit-op shell))))))
+
+(make-instruction chip8-eq
+                  ((V V)   9 X Y 0)
+                  ((V N)   4 X KK)
+                  ((V KEY) E X A 1))
+
+(make-instruction chip8-neq
+                  ((V KEY) E X 9 E)
+                  ((V V)   5 X Y 0)
+                  ((V N)   3 X KK))
+
+(make-instruction chip8-set
+                  ((V N)   6 X KK)
+                  ((V V)   8 X Y 0)
+                  ((I N)   A NNN)
+                  ((V DT)  F X 0 7)
+                  ((DT V)  F X 1 5)
+                  ((V ST)  F X 1 8)
+                  ((I V)   F X 2 9)
+                  ((V KEY) F X 0 A))
+
+(make-instruction chip8-add
+                  ((V N) 7 X KK)
+                  ((V V) 8 X Y 4)
+                  ((I V) F X 1 E))
+
+(make-instruction chip8-or   ((V V) 8 X X 1))
+(make-instruction chip8-and  ((V V) 8 X X 2))
+(make-instruction chip8-xor  ((V V) 8 X X 3))
+(make-instruction chip8-sub  ((V V) 8 X X 5))
+(make-instruction chip8-shr  ((V V) 8 X X 6))
+(make-instruction chip8-subn ((V V) 8 X X 7))
+(make-instruction chip8-shl  ((V V) 8 X X E))
+
+(make-instruction chip8-rand ((V N)   C X KK))
+(make-instruction chip8-draw ((V V N) D X Y N))
+
+(make-instruction chip8-bcd   ((V) F X 3 3))
+(make-instruction chip8-write ((V) F X 5 5))
+(make-instruction chip8-read  ((V) F X 6 5))
+
+(make-instruction chip8-clear (()  0 0 E 0))
+(make-instruction chip8-ret   (()  0 0 E E))
+(make-instruction chip8-call  ((N) 2 NNN))
+(make-instruction chip8-jump  ((N) 1 NNN))
+(make-instruction chip8-jump0 ((N) B NNN))
 
 (defun default-namespace ()
   (copy-alist
    `((PC    .  #x202)
-     (EQ    . ,#'emit-op)
-     (NEQ   . ,#'emit-op)
-     (SET   . ,#'emit-op)
-     (ADD   . ,#'emit-op)
-     (OR    . ,#'emit-op)
-     (AND   . ,#'emit-op)
-     (XOR   . ,#'emit-op)
-     (SUB   . ,#'emit-op)
-     (SHR   . ,#'emit-op)
-     (SUBR  . ,#'emit-op)
-     (SHL   . ,#'emit-op)
-     (RAND  . ,#'emit-op)
-     (DRAW  . ,#'emit-op)
-     (BCD   . ,#'emit-op)
-     (WRITE . ,#'emit-op)
-     (READ  . ,#'emit-op)
-     (CLEAR . ,#'emit-op)
-     (RET   . ,#'emit-op)
-     (CALL  . ,#'emit-op)
-     (JUMP  . ,#'emit-op)
-     (JUMP0 . ,#'emit-op)
+     (EQ    . ,#'chip8-eq)
+     (NEQ   . ,#'chip8-neq)
+     (SET   . ,#'chip8-set)
+     (ADD   . ,#'chip8-add)
+     (OR    . ,#'chip8-or)
+     (AND   . ,#'chip8-and)
+     (XOR   . ,#'chip8-xor)
+     (SUB   . ,#'chip8-sub)
+     (SHR   . ,#'chip8-shr)
+     (SUBN  . ,#'chip8-subn)
+     (SHL   . ,#'chip8-shl)
+     (RAND  . ,#'chip8-rand)
+     (DRAW  . ,#'chip8-draw)
+     (BCD   . ,#'chip8-bcd)
+     (WRITE . ,#'chip8-write)
+     (READ  . ,#'chip8-read)
+     (CLEAR . ,#'chip8-clear)
+     (RET   . ,#'chip8-ret)
+     (CALL  . ,#'chip8-call)
+     (JUMP  . ,#'chip8-jump)
+     (JUMP0 . ,#'chip8-jump0)
      (BREAK . ,#'(lambda () '(BREAK)))
      (+ . ,#'+)
      (- . ,#'-)
