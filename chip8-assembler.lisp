@@ -84,10 +84,6 @@
   (and (listp exp)
        (eq (first exp) 'INCLUDE)))
 
-(defun unpack? (exp)
-  (and (listp exp)
-       (eq (first exp) 'UNPACK)))
-
 (defun macro? (exp)
   (and (listp exp)
        (eq (first exp) 'MACRO)))
@@ -128,7 +124,6 @@
                 chip8-eval-include
                 chip8-eval-loop
                 chip8-eval-macro
-                chip8-eval-unpack
                 chip8-eval-proc
                 chip8-eval-def))
 
@@ -141,7 +136,6 @@
         ((var? exp) (chip8-eval-var exp env))
         ((loop? exp) (chip8-eval-loop exp env))
         ((include? exp) (chip8-eval-include exp env))
-        ((unpack? exp) (chip8-eval-unpack exp env))
         ((macro? exp) (chip8-eval-macro exp env))
         ((application? exp) (chip8-eval-application exp env))
         (t (error "wow you did something bad"))))
@@ -197,15 +191,6 @@
          (jump-to-main? (unless (= main-label #x200)
                           (chip8-eval `(JUMP ,main-label) env))))
     (append jump-to-main? binary)))
-
-(defun chip8-eval-unpack (exp env)
-  ;; TODO: doesn't handle 16-bit addresses
-  (let ((nibble (chip8-eval (second exp) env))
-        (label (chip8-eval (third exp) env)))
-    (chip8-eval-file
-     `((set v0 ,(logior (ash nibble 4) (ash label -8)))
-       (set v1 ,(logand label #xFF)))
-     env)))
 
 (defun chip8-eval-args-partial (args env &key eval-v)
   (mapcar (lambda (x)
