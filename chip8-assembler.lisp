@@ -2,47 +2,34 @@
   (ql:quickload :trivia)
   (use-package :trivia))
 
-(defun flatten (l)
-  (apply #'concatenate 'string l))
+(defun wrap (line)
+  (if (char= #\( (char line 0))
+      line
+      (concatenate 'string "(" line ")")))
 
-;; This works but could be better
 (defun make-sexp (line)
-  (loop :for ch :across line
-        :for count :from 0
-        :with result = (make-array 0 :element-type 'character :fill-pointer 0 :adjustable t)
-        :with parens-to-add = 0
-        :if (and (zerop count) (char/= #\( ch))
-          :do (progn (incf parens-to-add)
-                     (vector-push-extend #\( result))
-        :if (char= #\, ch)
-          :do (progn (vector-push-extend #\) result)
-                     (vector-push-extend #\( result))
-        :else :if (char= #\. ch)
-          :do (progn (incf parens-to-add)
-                     (vector-push-extend #\( result))
-        :else
-          :do (vector-push-extend ch result)
-        :finally
-           (return (dotimes (x parens-to-add result)
-                     (vector-push-extend #\) result)))))
+  (apply #'concatenate 'string
+         (map 'list
+              (lambda (ch)
+                (case ch
+                  (#\, ")(")
+                  (#\; "|;|")
+                  (otherwise (string ch))))
+              (wrap line))))
 
-(defun remove-comments (line)
-  (subseq line 0 (position #\; line :test #'char=)))
 
-(defun scrub-input (input)
-  (loop :for line :in input
-        :for trimmed = (remove-comments (string-trim " " line))
-
-        :unless (string= "" trimmed)
+(defun trim (lines)
+  (loop :for l :in lines
+        :for trimmed = (string-trim " " l)
+        :unless (uiop:emptyp trimmed)
           :collect trimmed))
 
-(defun parse (x)
-  (eval (read-from-string
-         (concatenate 'string
-                      "'("
-                      (flatten
-                       (mapcar #'make-sexp (scrub-input (uiop:read-file-lines x))))
-                      ")"))))
+(defun clean (input)
+  (apply #'concatenate 'string
+         (mapcar #'make-sexp (trim input))))
+
+(defun parse (cleaned)
+  (eval (read-from-string (concatenate 'string "'(" cleaned ")"))))
 
 (defstruct env namespace)
 
@@ -109,6 +96,10 @@
   (and (listp exp)
        (eq (first exp) 'PROC)))
 
+(defun comment? (exp)
+  (and (listp exp)
+       (eq (first exp) '|;|)))
+
 (defun env-pc (env)
   (cdr (assoc 'pc (env-namespace env))))
 
@@ -143,6 +134,7 @@
 
 (defun chip8-eval (exp env)
   (cond ((self-evaluating? exp) exp)
+        ((comment? exp) nil)
         ((def? exp) (chip8-eval-def exp env))
         ((label? exp) (chip8-eval-label exp env))
         ((proc? exp) (chip8-eval-proc exp env))
@@ -357,9 +349,9 @@
      (* . ,#'*)
      (/ . ,#'/))))
 
-(defun chip8-compile (file)
+(defun chip8-compile (filename)
   (chip8-eval-top
-   (parse file)
+   (parse (clean (uiop:read-file-lines filename)))
    (make-env :namespace (default-namespace))))
 
 (defun chip8-write (bytes filename)
