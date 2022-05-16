@@ -104,7 +104,7 @@
           (t (push (cons name (chip8-eval value env)) (env-namespace env))))
     nil))
 
-(defun chip8-eval-file (exps env)
+(defun chip8-eval-forms (exps env)
   (loop :for x :in exps
         :for evald = (chip8-eval x env)
         :if (listp evald)
@@ -128,7 +128,7 @@
           ((listp name) (error "macro not given a name: '~a'" exp))
           (t (push (cons name
                          (lambda (env &rest vars)
-                           (chip8-eval-file body (make-scope (env-namespace env) args vars))))
+                           (chip8-eval-forms body (make-scope (env-namespace env) args vars))))
                    (env-namespace env))))
     nil))
 
@@ -140,12 +140,12 @@
       (setf (env-pc env) #x200))
 
     (chip8-eval `(lab ,name) env)
-    (append (chip8-eval-file body (make-scope (env-namespace env)))
+    (append (chip8-eval-forms body (make-scope (env-namespace env)))
             (unless (eq name 'main) (chip8-eval '(ret) env)))))
 
-(defun chip8-eval-top (exps env)
+(defun chip8-eval-program (exps env)
   ;; Eval two times to resolve anything left uncompiled
-  (let* ((binary (chip8-eval-file (chip8-eval-file exps env) env))
+  (let* ((binary (chip8-eval-forms (chip8-eval-forms exps env) env))
          (main-label (cdr (assoc 'main (env-namespace env))))
          (jump-to-main? (unless (= main-label #x200)
                           (chip8-eval `(JUMP ,main-label) env))))
@@ -154,7 +154,7 @@
 (defun chip8-eval-loop (exp env)
   (let* ((label (env-pc env))
          (new-env (make-scope (env-namespace env))))
-    (append (chip8-eval-file (rest exp) new-env)
+    (append (chip8-eval-forms (rest exp) new-env)
             (chip8-eval `(JUMP ,label) new-env))))
 
 (defun chip8-eval-include (exp env)
@@ -313,7 +313,7 @@
      (/ . ,#'/))))
 
 (defun chip8-compile (filename)
-  (chip8-eval-top
+  (chip8-eval-program
    (parse (clean (uiop:read-file-lines filename)))
    (make-env :namespace (default-namespace))))
 
