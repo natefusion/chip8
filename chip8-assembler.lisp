@@ -1,7 +1,3 @@
-(eval-when (:compile-toplevel :execute)
-  (ql:quickload :trivia)
-  (use-package :trivia))
-
 (defun wrap (line)
   (if (char= #\( (char line 0))
       line
@@ -13,7 +9,9 @@
               (lambda (ch)
                 (case ch
                   (#\, ")(")
-                  (#\; "|;|")
+                  (#\; "\;")
+                  (#\: "\:")
+                  (#\| "|\\||")
                   (otherwise (string ch))))
               (wrap line))))
 
@@ -84,14 +82,15 @@
         ((numberp exp) exp)
         ((listp exp)
          (case (first exp) 
-           (|;|       nil)
+           (\;        nil)
            (def       (chip8-eval-def exp env))
-           (lab       (chip8-eval-label exp env))
+           (\:        (chip8-eval-label exp env))
            (proc      (chip8-eval-proc exp env))
            (loop      (chip8-eval-loop exp env))
            (include   (chip8-eval-include exp env))
            (macro     (chip8-eval-macro exp env))
            (undefined (chip8-eval (second exp) env))
+           (@         `(@ ,(chip8-eval (second exp) env)))
            (V         exp)
            (otherwise (chip8-eval-application exp env))))
         (t (chip8-eval-var exp env))))
@@ -139,9 +138,19 @@
     (when (and (= #x202 (env-pc env)) (eq name 'main))
       (setf (env-pc env) #x200))
 
-    (chip8-eval `(lab ,name) env)
+    (chip8-eval `(|:| ,name) env)
     (append (chip8-eval-forms body (make-scope (env-namespace env)))
             (unless (eq name 'main) (chip8-eval '(ret) env)))))
+
+(defun chip8-eval-at (exps)
+  (loop :for x :in exps
+        :if (and (listp x) (eq (first x) '@))
+          :collect (nth (logand (second x) #xFF) result) :into result
+        :else :if (listp x)
+                :append x :into result
+        :else
+          :collect x :into result
+        :finally (return result)))
 
 (defun chip8-eval-program (exps env)
   ;; Eval two times to resolve anything left uncompiled
@@ -149,7 +158,7 @@
          (main-label (cdr (assoc 'main (env-namespace env))))
          (jump-to-main? (unless (= main-label #x200)
                           (chip8-eval `(JUMP ,main-label) env))))
-    (append jump-to-main? binary)))
+    (chip8-eval-at (append jump-to-main? binary))))
 
 (defun chip8-eval-loop (exp env)
   (let* ((label (env-pc env))
@@ -159,13 +168,12 @@
 
 (defun chip8-eval-include (exp env)
   (let ((name (second exp))
-        ;; silently does nothing if no numbers are given to include (bad!)
-        (bytes (let ((x (chip8-eval-args (cddr exp) env)))
-                 (append x (when (oddp (length x)) '(0))))))
-    (dolist (x bytes)
-      (cond ((not (numberp x)) (error "Only numbers can be included"))
-            ((> x 255) (error "cannot include numbers larger than 255 (#xFF)"))))
-    (chip8-eval `(lab ,name) env)
+        (bytes (mapcar (lambda (x)
+                         (cond ((not (numberp x)) x)
+                               ((> x #xFF) (logand x #xFF))
+                               (t x)))
+                       (chip8-eval-args (cddr exp) env))))
+    (chip8-eval `(\: ,name) env)
     (incf (env-pc env) (length bytes))
     bytes))
 
@@ -173,8 +181,8 @@
   ;; Do I want to eval v registers here???
   (let* ((function (chip8-eval (first exp) env))
          (arguments (chip8-eval-args (rest exp) env)))
-    (if (eq function 'undefined)
-        (error "undefined symbol: '~a'" exp)
+    (if (eq (and (listp function) (first function)) 'undefined)
+        `(undefined ,exp)
         (apply function env arguments))))
 
 (defun to-bytes (num)
@@ -260,6 +268,11 @@
 (make-instruction chip8-jump  ((N) 1 NNN))
 (make-instruction chip8-jump0 ((N) B NNN))
 
+;; chip8-eval-application passes the environment to the application.
+;; I want to ignore this for the mathematical operations.
+(defmacro lm (func)
+  `(lambda (&rest args) (apply (function ,func) (rest args))))
+
 (defun default-namespace ()
   (copy-alist
    `((PC    .  #x202)
@@ -306,11 +319,15 @@
      (VD V #xD)
      (VE V #xE)
      (VF V #xF)
-     
-     (+ . ,#'+)
-     (- . ,#'-)
-     (* . ,#'*)
-     (/ . ,#'/))))
+
+     (&  . ,(lm logand))
+     (\| . ,(lm logior))
+     (<< . ,(lm (lambda (x y) (ash x y))))
+     (>> . ,(lm (lambda (x y) (ash x (- y)))))
+     (+ . ,(lm +))
+     (- . ,(lm -))
+     (* . ,(lm *))
+     (/ . ,(lm /)))))
 
 (defun chip8-compile (filename)
   (chip8-eval-program

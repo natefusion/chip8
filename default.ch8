@@ -21,8 +21,6 @@ include down #x50 #x50 #x20 #xA8 #x70 #x20 #x70 #x70
   set i up
   add px #xFF)
 
-
-
 ; this is a comment
 (proc main
   rand px #b0011111
