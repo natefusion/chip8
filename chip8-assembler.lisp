@@ -153,7 +153,7 @@
 (defun chip8-eval-at (exps)
   (loop :for x :in exps
         :if (and (listp x) (eq (first x) '@))
-          :collect (nth (logand (second x) #xFF) result) :into result
+          :collect (nth (- (second x) #x200) result) :into result
         :else :if (listp x)
                 :append x :into result
         :else
