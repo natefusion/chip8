@@ -68,6 +68,9 @@
       (second exp)
       exp))
 
+(defun chip8-eval-calls (exp env)
+  (cdr (assoc exp (cdr (assoc 'macro-calls (env-namespace env))))))
+
 (declaim (ftype function
                 chip8-eval-application
                 chip8-eval-include
@@ -118,15 +121,21 @@
                                 (append '(nil) data)
                                 namespace)))
 
+(defun add-to-calls (name env)
+  (push (cons name 0) (cdr (assoc 'macro-calls (env-namespace env)))))
+
 (defun chip8-eval-macro (exp env)
   (let ((name (second exp))
         (args (third exp))
         (body (cdddr exp)))
     (cond ((assoc name (env-namespace env)) (error "macro redefinition of '~a'" name))
           ((listp name) (error "macro not given a name: '~a'" exp))
-          (t (push (cons name
+          (t (add-to-calls name env)
+             (push (cons name
                          (lambda (env &rest vars)
-                           (chip8-eval-forms body (make-scope (env-namespace env) args vars))))
+                           (chip8-eval-forms body (make-scope (env-namespace env)
+                                                              (append args '(calls))
+                                                              (append vars (list (chip8-eval-calls name env)))))))
                    (env-namespace env))))
     nil))
 
@@ -176,13 +185,19 @@
     (incf (env-pc env) (length bytes))
     bytes))
 
+(defun inc-calls (name env)
+  (let ((calls (cdr (assoc name (cdr (assoc 'macro-calls (env-namespace env)))))))
+    (when calls (incf (cdr (assoc name (cdr (assoc 'macro-calls (env-namespace env)))))))))
+
 (defun chip8-eval-application (exp env)
   ;; Do I want to eval v registers here???
   (let* ((function (chip8-eval (first exp) env))
          (arguments (chip8-eval-args (rest exp) env)))
     (if (eq (and (listp function) (first function)) 'undefined)
         `(undefined ,exp)
-        (apply function env arguments))))
+        (progn
+          (inc-calls (first exp) env)
+          (apply function env arguments)))))
 
 (defun to-bytes (num)
   (loop :for n :across (format nil "~x" num)
@@ -297,6 +312,8 @@
      (JUMP  . ,#'chip8-jump)
      (JUMP0 . ,#'chip8-jump0)
 
+     (MACRO-CALLS . nil)
+     
      (KEY   . KEY)
      (ST    . ST)
      (DT    . DT)
@@ -326,7 +343,9 @@
      (+ . ,(lm +))
      (- . ,(lm -))
      (* . ,(lm *))
-     (/ . ,(lm /)))))
+     (/ . ,(lm /))
+     (% . ,(lm mod))
+     (floor . ,(lm floor)))))
 
 (defun chip8-compile (filename)
   (chip8-eval-program
