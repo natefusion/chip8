@@ -195,9 +195,9 @@
          (arguments (chip8-eval-args (rest exp) env)))
     (if (eq (and (listp function) (first function)) 'undefined)
         `(undefined ,exp)
-        (progn
+        (let ((application (apply function env arguments)))
           (inc-calls (first exp) env)
-          (apply function env arguments)))))
+          application))))
 
 (defun to-bytes (num)
   (loop :for n :across (format nil "~x" num)
