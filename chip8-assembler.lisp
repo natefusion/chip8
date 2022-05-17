@@ -9,12 +9,11 @@
               (lambda (ch)
                 (case ch
                   (#\, ")(")
-                  (#\; "\;")
-                  (#\: "\:")
+                  (#\; "\\;")
+                  (#\: "\\:")
                   (#\| "|\\||")
                   (otherwise (string ch))))
               (wrap line))))
-
 
 (defun trim (lines)
   (loop :for l :in lines
@@ -297,7 +296,7 @@
      (CALL  . ,#'chip8-call)
      (JUMP  . ,#'chip8-jump)
      (JUMP0 . ,#'chip8-jump0)
-     
+
      (KEY   . KEY)
      (ST    . ST)
      (DT    . DT)
