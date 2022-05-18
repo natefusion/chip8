@@ -92,7 +92,6 @@
            (include   (chip8-eval-include exp env))
            (macro     (chip8-eval-macro exp env))
            (undefined (chip8-eval (second exp) env))
-           (@         `(@ ,(chip8-eval (second exp) env)))
            (V         exp)
            (otherwise (chip8-eval-application exp env))))
         (t (chip8-eval-var exp env))))
@@ -124,6 +123,15 @@
 (defun add-to-calls (name env)
   (push (cons name 0) (cdr (assoc 'macro-calls (env-namespace env)))))
 
+(defun make-macro (name body args env)
+  (lambda (passed-env &rest vars)
+    (let ((evald (chip8-eval-forms
+                  body (make-scope (env-namespace env)
+                                   (append '(calls) args)
+                                   (append (list (chip8-eval-calls name passed-env)) vars)))))
+      (incf (cdr (assoc name (cdr (assoc 'macro-calls (env-namespace env))))))
+      evald)))
+
 (defun chip8-eval-macro (exp env)
   (let ((name (second exp))
         (args (third exp))
@@ -131,12 +139,7 @@
     (cond ((assoc name (env-namespace env)) (error "macro redefinition of '~a'" name))
           ((listp name) (error "macro not given a name: '~a'" exp))
           (t (add-to-calls name env)
-             (push (cons name
-                         (lambda (env &rest vars)
-                           (chip8-eval-forms body (make-scope (env-namespace env)
-                                                              (append args '(calls))
-                                                              (append vars (list (chip8-eval-calls name env)))))))
-                   (env-namespace env))))
+             (push (cons name (make-macro name body args env)) (env-namespace env))))
     nil))
 
 (defun chip8-eval-proc (exp env)
@@ -185,19 +188,16 @@
     (incf (env-pc env) (length bytes))
     bytes))
 
-(defun inc-calls (name env)
-  (let ((calls (cdr (assoc name (cdr (assoc 'macro-calls (env-namespace env)))))))
-    (when calls (incf (cdr (assoc name (cdr (assoc 'macro-calls (env-namespace env)))))))))
+(defun undefined? (args)
+  (when (listp args) (find t (mapcar (lambda (x) (eq (if (listp x) (first x) x) 'undefined)) args))))
 
 (defun chip8-eval-application (exp env)
   ;; Do I want to eval v registers here???
-  (let* ((function (chip8-eval (first exp) env))
-         (arguments (chip8-eval-args (rest exp) env)))
-    (if (eq (and (listp function) (first function)) 'undefined)
-        `(undefined ,exp)
-        (let ((application (apply function env arguments)))
-          (inc-calls (first exp) env)
-          application))))
+  (let* ((function (chip8-eval (first exp) env)))
+    (cond ((undefined? function)
+           (error "Undefined application: '~a' in '~a'" (first exp) exp))
+          ((undefined? (rest exp)) (list exp))
+          (t (apply function env (rest exp))))))
 
 (defun to-bytes (num)
   (loop :for n :across (format nil "~x" num)
@@ -221,20 +221,14 @@
         :finally (return (list (ash (logand op #xFF00) -8)
                                (logand op #xFF)))))
 
-(defun clean-args (args env)
-  (let ((cleaned (remove-if #'builtin-var? (chip8-eval-args args env))))
-    (if (find t (mapcar (lambda (x)
-                          (and (listp x) (eq (first x) 'undefined)))
-                        cleaned))
-        'undefined (mapcar #'chip8-eval-v cleaned))))
-
 (defmacro make-instruction (name &rest alist)
   `(defun ,name (env &rest args)
-     (let ((cleaned (clean-args args env)))
-       (incf (env-pc env) 2)
-       (if (eq cleaned 'undefined)
+     (incf (env-pc env) 2)
+     (let ((e-args (chip8-eval-args args env)))
+       (if (undefined? e-args)
            (list (cons (car (rassoc #',name (env-namespace env))) args))
-           (emit-op (combine-op (cdr (assoc (mapcar #'chip8-type (chip8-eval-args args env)) ',alist :test #'equal)) cleaned))))))
+           (emit-op (combine-op (cdr (assoc (mapcar #'chip8-type e-args) ',alist :test #'equal))
+                                (mapcar #'chip8-eval-v (remove-if #'builtin-var? e-args))))))))
 
 (make-instruction chip8-eq
                   ((V V)   9 X Y 0)
@@ -284,8 +278,8 @@
 
 ;; chip8-eval-application passes the environment to the application.
 ;; I want to ignore this for the mathematical operations.
-(defmacro lm (func)
-  `(lambda (&rest args) (apply (function ,func) (rest args))))
+(defmacro lm (f)
+  `(lambda (env &rest args) (apply #',f (chip8-eval-args args env))))
 
 (defun default-namespace ()
   (copy-alist
@@ -312,7 +306,7 @@
      (JUMP  . ,#'chip8-jump)
      (JUMP0 . ,#'chip8-jump0)
 
-     (MACRO-CALLS . nil)
+     (MACRO-CALLS)
      
      (KEY   . KEY)
      (ST    . ST)
@@ -336,6 +330,7 @@
      (VE V #xE)
      (VF V #xF)
 
+     (@  . ,(lambda (env arg) `(@ ,(chip8-eval arg env))))
      (&  . ,(lm logand))
      (\| . ,(lm logior))
      (<< . ,(lm (lambda (x y) (ash x y))))
