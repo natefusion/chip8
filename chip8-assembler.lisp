@@ -1,3 +1,5 @@
+(declaim (ftype function chip8-eval))
+
 (defun wrap (line)
   (if (char= #\( (char line 0))
       line
@@ -28,7 +30,14 @@
 (defun parse (cleaned)
   (eval (read-from-string (concatenate 'string "'(" cleaned ")"))))
 
-(defstruct env namespace)
+;; (defstruct scope macro-calls namespace)
+(defstruct env macro-calls namespace)
+
+(defun env-pc (env)
+  (cdr (assoc 'pc (env-namespace env))))
+
+(defmethod (setf env-pc) (new-val (obj env))
+  (setf (cdr (assoc 'pc (env-namespace obj))) new-val))
 
 (defun builtin-var? (exp)
   (case exp ((KEY ST DT I) t)))
@@ -39,12 +48,6 @@
     ((builtin-var? exp) exp)
     ((numberp exp) 'N)
     (t nil)))
-
-(defun env-pc (env)
-  (cdr (assoc 'pc (env-namespace env))))
-
-(defmethod (setf env-pc) (new-val (obj env))
-  (setf (cdr (assoc 'pc (env-namespace obj))) new-val))
 
 (defun in-scope? (value namespace)
   (let ((scope-separator (position 'scope-separator (reverse namespace) :key #'car)))
@@ -69,32 +72,13 @@
       exp))
 
 (defun chip8-eval-calls (exp env)
-  (cdr (assoc exp (cdr (assoc 'macro-calls (env-namespace env))))))
+  (cdr (assoc exp (env-macro-calls env))))
 
-(declaim (ftype function
-                chip8-eval-application
-                chip8-eval-include
-                chip8-eval-loop
-                chip8-eval-macro
-                chip8-eval-proc
-                chip8-eval-def))
+(defun chip8-eval-args (exps env)
+  (mapcar (lambda (x) (chip8-eval x env)) exps))
 
-(defun chip8-eval (exp env)
-  (cond ((null exp) nil)
-        ((numberp exp) exp)
-        ((listp exp)
-         (case (first exp) 
-           (\;        nil)
-           (def       (chip8-eval-def exp env))
-           (\:        (chip8-eval-label exp env))
-           (proc      (chip8-eval-proc exp env))
-           (loop      (chip8-eval-loop exp env))
-           (include   (chip8-eval-include exp env))
-           (macro     (chip8-eval-macro exp env))
-           (undefined (chip8-eval (second exp) env))
-           (V         exp)
-           (otherwise (chip8-eval-application exp env))))
-        (t (chip8-eval-var exp env))))
+(defun undefined? (args)
+  (when (listp args) (find t (mapcar (lambda (x) (eq (if (listp x) (first x) x) 'undefined)) args))))
 
 (defun chip8-eval-def (exp env)
   (let ((name (second exp))
@@ -112,24 +96,22 @@
         :else
           :collect evald))
 
- (defun chip8-eval-args (exps env)
-   (mapcar (lambda (x) (chip8-eval x env)) exps))
-
-(defun make-scope (namespace &optional keys data)
-  (make-env :namespace (pairlis (append '(scope-separator) keys)
+(defun make-scope (env &optional keys data)
+  (make-env :macro-calls (env-macro-calls env)
+            :namespace (pairlis (append '(scope-separator) keys)
                                 (append '(nil) data)
-                                namespace)))
+                                (env-namespace env))))
 
 (defun add-to-calls (name env)
-  (push (cons name 0) (cdr (assoc 'macro-calls (env-namespace env)))))
+  (push (cons name 0) (env-macro-calls env)))
 
 (defun make-macro (name body args env)
   (lambda (passed-env &rest vars)
     (let ((evald (chip8-eval-forms
-                  body (make-scope (env-namespace env)
+                  body (make-scope env
                                    (append '(calls) args)
                                    (append (list (chip8-eval-calls name passed-env)) vars)))))
-      (incf (cdr (assoc name (cdr (assoc 'macro-calls (env-namespace env))))))
+      (incf (cdr (assoc name (env-macro-calls env))))
       evald)))
 
 (defun chip8-eval-macro (exp env)
@@ -150,7 +132,7 @@
       (setf (env-pc env) #x200))
 
     (chip8-eval `(|:| ,name) env)
-    (append (chip8-eval-forms body (make-scope (env-namespace env)))
+    (append (chip8-eval-forms body (make-scope env))
             (unless (eq name 'main) (chip8-eval '(ret) env)))))
 
 (defun chip8-eval-at (exps)
@@ -164,18 +146,19 @@
         :finally (return result)))
 
 (defun chip8-eval-program (exps env)
+  (chip8-eval '(def pc #x202) env)
   ;; Eval two times to resolve anything left uncompiled
   (let* ((binary (chip8-eval-forms (chip8-eval-forms exps env) env))
          (main-label (cdr (assoc 'main (env-namespace env))))
-         (jump-to-main? (unless (= main-label #x200)
+         (jump-to-main? (unless (eql main-label #x200)
                           (chip8-eval `(JUMP ,main-label) env))))
     (chip8-eval-at (append jump-to-main? binary))))
 
 (defun chip8-eval-loop (exp env)
   (let* ((label (env-pc env))
-         (new-env (make-scope (env-namespace env))))
+         (new-env (make-scope env)))
     (append (chip8-eval-forms (rest exp) new-env)
-            (chip8-eval `(JUMP ,label) new-env))))
+            (chip8-eval `(JUMP ,label) env))))
 
 (defun chip8-eval-include (exp env)
   (let ((name (second exp))
@@ -187,17 +170,6 @@
     (chip8-eval `(\: ,name) env)
     (incf (env-pc env) (length bytes))
     bytes))
-
-(defun undefined? (args)
-  (when (listp args) (find t (mapcar (lambda (x) (eq (if (listp x) (first x) x) 'undefined)) args))))
-
-(defun chip8-eval-application (exp env)
-  ;; Do I want to eval v registers here???
-  (let* ((function (chip8-eval (first exp) env)))
-    (cond ((undefined? function)
-           (error "Undefined application: '~a' in '~a'" (first exp) exp))
-          ((undefined? (rest exp)) (list exp))
-          (t (apply function env (rest exp))))))
 
 (defun to-bytes (num)
   (loop :for n :across (format nil "~x" num)
@@ -221,26 +193,26 @@
         :finally (return (list (ash (logand op #xFF00) -8)
                                (logand op #xFF)))))
 
-(defmacro make-instruction (name &rest alist)
-  `(defun ,name (env &rest args)
+(defmacro make-instruction (lname c8name &rest alist)
+  `(defun ,lname (env &rest args)
      (incf (env-pc env) 2)
      (let ((e-args (chip8-eval-args args env)))
        (if (undefined? e-args)
-           (list (cons (car (rassoc #',name (env-namespace env))) args))
+           (list (cons ',c8name args))
            (emit-op (combine-op (cdr (assoc (mapcar #'chip8-type e-args) ',alist :test #'equal))
                                 (mapcar #'chip8-eval-v (remove-if #'builtin-var? e-args))))))))
 
-(make-instruction chip8-eq
+(make-instruction chip8-eq eq
                   ((V V)   9 X Y 0)
                   ((V N)   4 X KK)
                   ((V KEY) E X A 1))
 
-(make-instruction chip8-neq
+(make-instruction chip8-neq neq
                   ((V KEY) E X 9 E)
                   ((V V)   5 X Y 0)
                   ((V N)   3 X KK))
 
-(make-instruction chip8-set
+(make-instruction chip8-set set
                   ((V N)   6 X KK)
                   ((V V)   8 X Y 0)
                   ((I N)   A NNN)
@@ -250,102 +222,111 @@
                   ((I V)   F X 2 9)
                   ((V KEY) F X 0 A))
 
-(make-instruction chip8-add
+(make-instruction chip8-add add
                   ((V N) 7 X KK)
                   ((V V) 8 X Y 4)
                   ((I V) F X 1 E))
 
-(make-instruction chip8-or   ((V V) 8 X Y 1))
-(make-instruction chip8-and  ((V V) 8 X Y 2))
-(make-instruction chip8-xor  ((V V) 8 X Y 3))
-(make-instruction chip8-sub  ((V V) 8 X Y 5))
-(make-instruction chip8-shr  ((V V) 8 X Y 6))
-(make-instruction chip8-subn ((V V) 8 X Y 7))
-(make-instruction chip8-shl  ((V V) 8 X Y E))
+(make-instruction chip8-or   or   ((V V) 8 X Y 1))
+(make-instruction chip8-and  and  ((V V) 8 X Y 2))
+(make-instruction chip8-xor  xor  ((V V) 8 X Y 3))
+(make-instruction chip8-sub  sub  ((V V) 8 X Y 5))
+(make-instruction chip8-shr  shr  ((V V) 8 X Y 6))
+(make-instruction chip8-subn subn ((V V) 8 X Y 7))
+(make-instruction chip8-shl  shl  ((V V) 8 X Y E))
 
-(make-instruction chip8-rand ((V N)   C X KK))
-(make-instruction chip8-draw ((V V N) D X Y N))
+(make-instruction chip8-rand rand ((V N)   C X KK))
+(make-instruction chip8-draw draw ((V V N) D X Y N))
 
-(make-instruction chip8-bcd   ((V) F X 3 3))
-(make-instruction chip8-write ((V) F X 5 5))
-(make-instruction chip8-read  ((V) F X 6 5))
+(make-instruction chip8-bcd   bcd   ((V) F X 3 3))
+(make-instruction chip8-write write ((V) F X 5 5))
+(make-instruction chip8-read  read  ((V) F X 6 5))
 
-(make-instruction chip8-clear (()  0 0 E 0))
-(make-instruction chip8-ret   (()  0 0 E E))
-(make-instruction chip8-call  ((N) 2 NNN))
-(make-instruction chip8-jump  ((N) 1 NNN))
-(make-instruction chip8-jump0 ((N) B NNN))
+(make-instruction chip8-clear clear (()  0 0 E 0))
+(make-instruction chip8-ret   ret   (()  0 0 E E))
+(make-instruction chip8-call  call  ((N) 2 NNN))
+(make-instruction chip8-jump  jump  ((N) 1 NNN))
+(make-instruction chip8-jump0 jump0 ((N) B NNN))
 
-;; chip8-eval-application passes the environment to the application.
-;; I want to ignore this for the mathematical operations.
 (defmacro lm (f)
   `(lambda (env &rest args) (apply #',f (chip8-eval-args args env))))
 
-(defun default-namespace ()
-  (copy-alist
-   `((PC    .  #x202)
-     (EQ    . ,#'chip8-eq)
-     (NEQ   . ,#'chip8-neq)
-     (SET   . ,#'chip8-set)
-     (ADD   . ,#'chip8-add)
-     (OR    . ,#'chip8-or)
-     (AND   . ,#'chip8-and)
-     (XOR   . ,#'chip8-xor)
-     (SUB   . ,#'chip8-sub)
-     (SHR   . ,#'chip8-shr)
-     (SUBN  . ,#'chip8-subn)
-     (SHL   . ,#'chip8-shl)
-     (RAND  . ,#'chip8-rand)
-     (DRAW  . ,#'chip8-draw)
-     (BCD   . ,#'chip8-bcd)
-     (WRITE . ,#'chip8-write)
-     (READ  . ,#'chip8-read)
-     (CLEAR . ,#'chip8-clear)
-     (RET   . ,#'chip8-ret)
-     (CALL  . ,#'chip8-call)
-     (JUMP  . ,#'chip8-jump)
-     (JUMP0 . ,#'chip8-jump0)
-
-     (MACRO-CALLS)
-     
-     (KEY   . KEY)
-     (ST    . ST)
-     (DT    . DT)
-     (I     . I)
-     
-     (V0 V #x0)
-     (V1 V #x1)
-     (V2 V #x2)
-     (V3 V #x3)
-     (V4 V #x4)
-     (V5 V #x5)
-     (V6 V #x6)
-     (V7 V #x7)
-     (V8 V #x8)
-     (V9 V #x9)
-     (VA V #xA)
-     (VB V #xB)
-     (VC V #xC)
-     (VD V #xD)
-     (VE V #xE)
-     (VF V #xF)
-
-     (@  . ,(lambda (env arg) `(@ ,(chip8-eval arg env))))
-     (&  . ,(lm logand))
-     (\| . ,(lm logior))
-     (<< . ,(lm (lambda (x y) (ash x y))))
-     (>> . ,(lm (lambda (x y) (ash x (- y)))))
-     (+ . ,(lm +))
-     (- . ,(lm -))
-     (* . ,(lm *))
-     (/ . ,(lm /))
-     (% . ,(lm mod))
-     (floor . ,(lm floor)))))
+(defun chip8-eval (exp env)
+  (cond ((null exp) nil)
+        ((numberp exp) exp)
+        ((listp exp)
+         (case (first exp) 
+           (\;        nil)
+           (def       (chip8-eval-def exp env))
+           (\:        (chip8-eval-label exp env))
+           (proc      (chip8-eval-proc exp env))
+           (loop      (chip8-eval-loop exp env))
+           (include   (chip8-eval-include exp env))
+           (macro     (chip8-eval-macro exp env))
+           (undefined (chip8-eval (second exp) env))
+           (V exp)
+           (@ `(@ (chip8-eval (second exp))))
+           (otherwise (apply (chip8-eval (first exp) env) env (rest exp)))))
+        (t (case exp
+             (EQ    #'chip8-eq)
+             (NEQ   #'chip8-neq)
+             (SET   #'chip8-set)
+             (ADD   #'chip8-add)
+             (OR    #'chip8-or)
+             (AND   #'chip8-and)
+             (XOR   #'chip8-xor)
+             (SUB   #'chip8-sub)
+             (SHR   #'chip8-shr)
+             (SUBN  #'chip8-subn)
+             (SHL   #'chip8-shl)
+             (RAND  #'chip8-rand)
+             (DRAW  #'chip8-draw)
+             (BCD   #'chip8-bcd)
+             (WRITE #'chip8-write)
+             (READ  #'chip8-read)
+             (CLEAR #'chip8-clear)
+             (RET   #'chip8-ret)
+             (CALL  #'chip8-call)
+             (JUMP  #'chip8-jump)
+             (JUMP0 #'chip8-jump0)
+             
+             (&  (lm logand))
+             (\| (lm logior))
+             (<< (lm ash))
+             (>> (lm (lambda (x y) (ash x (- y)))))
+             (+  (lm +))
+             (- (lm -))
+             (* (lm *))
+             (/ (lm /))
+             (% (lm mod))
+             (floor (lm floor))
+             
+             (V0 '(V #x0))
+             (V1 '(V #x1))
+             (V2 '(V #x2))
+             (V3 '(V #x3))
+             (V4 '(V #x4))
+             (V5 '(V #x5))
+             (V6 '(V #x6))
+             (V7 '(V #x7))
+             (V8 '(V #x8))
+             (V9 '(V #x9))
+             (VA '(V #xA))
+             (VB '(V #xB))
+             (VC '(V #xC))
+             (VD '(V #xD))
+             (VE '(V #xE))
+             (VF '(V #xF))
+             (KEY 'KEY)
+             (DT 'DT)
+             (ST 'ST)
+             (I  'I)
+             (otherwise (chip8-eval-var exp env))))))
 
 (defun chip8-compile (filename)
   (chip8-eval-program
    (parse (clean (uiop:read-file-lines filename)))
-   (make-env :namespace (default-namespace))))
+   (make-env)))
 
 (defun chip8-write (bytes filename)
   (with-open-file (f filename
