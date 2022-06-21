@@ -6,8 +6,10 @@ def S #x8
 def A #x7
 def D #x9
 
-include up #x70 #x70 #x20 #x70 #xA8 #x20 #x50 #x50
-include down #x50 #x50 #x20 #xA8 #x70 #x20 #x70 #x70
+: up
+include #x70 #x70 #x20 #x70 #xA8 #x20 #x50 #x50
+: down
+include #x50 #x50 #x20 #xA8 #x70 #x20 #x70 #x70
 
 (proc if-w-pressed
   set i up
@@ -33,6 +35,7 @@ include down #x50 #x50 #x20 #xA8 #x70 #x20 #x70 #x70
 
     (; commas can be used to put more
        than one statement on one line without parens)
+       
     set v0 W , eq v0 key
     call if-w-pressed
 
