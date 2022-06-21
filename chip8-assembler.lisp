@@ -196,7 +196,7 @@
   (push (cons name (env-pc env)) (env-values env))
   nil)
 
-(defun c8-eval-proc (env name body)
+(defun c8-eval-proc-0 (env name body)
   (c8-eval-label-0 env name)
   (append (c8-eval-0 env body)
           (if (eq name 'main) nil (c8-eval-form-0 env '(ret)))))
@@ -205,6 +205,29 @@
   (let* ((pc (env-pc env))
          (lp (c8-eval-0 env body)))
     (append lp (c8-eval-form-0 env `(JUMP ,pc)))))
+
+(defun c8-eval-if-0 (env test then else)
+  (cond ((eq (first then) 'then)
+         (case (first test)
+           (eq (setf (first test) 'neq))
+           (neq (setf (first test) 'eq))
+           (otherwise (error "Test for if statement must be either 'eq' or 'neq'")))
+
+         ;; accounts for the jump instructions
+         ;; evaluating the jump instructions 'normally' will
+         ;;   increment the pc either too early or too late
+         ;; so I will do it beforehand and manually add the jump instruction
+         (incf (env-pc env) (if else 4 2))
+         
+         (let* ((jump (lambda () `((,#'c8-jump ,(env-pc env)))))
+                (test (c8-eval-form-0 env test))
+                (then (c8-eval-0 env (rest then)))
+                (jump-else (funcall jump))
+                (else (c8-eval-0 env (rest else)))
+                (jump-end (funcall jump)))
+           (append test jump-else then jump-end else)))
+        
+        (t (c8-eval-0 env (list test then else)))))
 
 (defun c8-eval-include-0 (env form)
   (incf (env-pc env) (length (rest form)))
@@ -243,7 +266,8 @@
       (case (first form)
         (\; nil)
         (def (list form))
-        (proc (c8-eval-proc env (second form) (cddr form)))
+        (proc (c8-eval-proc-0 env (second form) (cddr form)))
+        (if (c8-eval-if-0 env (second form) (third form) (fourth form)))
         (\: (c8-eval-label-0 env (cadr form)))
         (loop (c8-eval-loop-0 env (rest form)))
         (include (c8-eval-include-0 env form))
@@ -309,10 +333,12 @@
     f
     (error "Compilation failed: Your program is too big")))
 
-(defun c8-compile (filename &key (using-main? t))
+(defun c8-compile (filename &key (using-main? t) initial-step-only?)
   (let ((parsed (parse (clean (uiop:read-file-lines filename))))
-        (env (make-env :using-main? using-
-    (c8-eval-program-1 env (c8-eval-program-0 env parsed))))
+        (env (make-env :using-main? using-main?)))
+    (if initial-step-only?
+        (c8-eval-program-0 env parsed)
+        (c8-eval-program-1 env (c8-eval-program-0 env parsed)))))
 
 (defun chip8-write (bytes filename)
   (with-open-file (f filename
