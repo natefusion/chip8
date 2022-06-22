@@ -26,9 +26,9 @@ include #x50 #x50 #x20 #xA8 #x70 #x20 #x70 #x70
   set i down
   add py 1]
   
-[proc if-a-pressed
+[macro if-a-pressed (X)
   set i up
-  add px #xFF]
+  add px X]
 
 ; this is a comment
 [proc main
@@ -46,11 +46,14 @@ include #x50 #x50 #x20 #xA8 #x70 #x20 #x70 #x70
     set v0 W , eq v0 key
     call if-w-pressed
 
-    [set v0 S] [eq v0 key]
-    call if-s-pressed
+    [set v0 S]
+    [if (eq v0 key)
+      call if-s-pressed]
 
-    set v0 A , eq v0 key
-    call if-a-pressed
+    set v0 A
+    [if (eq v0 key)
+      [then
+        if-a-pressed #xFF]]
 
     set v0 D
     eq v0 key , call if-d-pressed
