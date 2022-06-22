@@ -174,7 +174,7 @@
 (defun c8-eval-proc-0 (env name body)
   (c8-eval-label-0 env name)
   (append (c8-eval-0 env body)
-          (if (eq name 'main) nil (c8-eval-form-0 env '(ret)))))
+          (unless (eq name 'main) (c8-eval-form-0 env '(ret)))))
 
 (defun c8-eval-loop-0 (env body)
   (let* ((pc (env-pc env))
@@ -199,7 +199,7 @@
                 (then (c8-eval-0 env (rest then)))
                 (jump-else (funcall jump))
                 (else (c8-eval-0 env (rest else)))
-                (jump-end (funcall jump)))
+                (jump-end (when else (funcall jump))))
            (append test jump-else then jump-end else)))
         
         (t (c8-eval-0 env (list test then else)))))
