@@ -193,15 +193,15 @@
          ;; this will ensure the program counter is correct
          (let ((jump-else (c8-eval-form-0 env '(jump 0)))
                (jump-end  (when else (c8-eval-form-0 env '(jump 0)))))
-           
+           (print jump-else)
            (setf test (c8-eval-form-0 env test)
                  then (c8-eval-0 env (rest then))
-                 (cdr jump-else) (list (env-pc env))
-                 else (c8-eval-0 env (rest else)))
-           (when jump-end (setf (cdr jump-end) (list (env-pc env))))
+                 (cadar jump-else) (env-pc env)
+                 else (c8-eval-0 env (cdar else)))
+           (when jump-end (setf (cadar jump-end) (env-pc env)))
            (append test jump-else then jump-end else)))
         
-        (t (c8-eval-0 env (list test then else)))))
+        (t (c8-eval-0 env (list* test then else)))))
 
 (defun c8-eval-include-0 (env form)
   (incf (env-pc env) (length (rest form)))
@@ -241,7 +241,7 @@
         (\; nil)
         (def (list form))
         (proc (c8-eval-proc-0 env (second form) (cddr form)))
-        (if (c8-eval-if-0 env (second form) (third form) (fourth form)))
+        (if (c8-eval-if-0 env (second form) (third form) (cdddr form)))
         (\: (c8-eval-label-0 env (cadr form)))
         (loop (c8-eval-loop-0 env (rest form)))
         (include (c8-eval-include-0 env form))
