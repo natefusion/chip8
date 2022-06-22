@@ -193,7 +193,7 @@
          ;; this will ensure the program counter is correct
          (let ((jump-else (c8-eval-form-0 env '(jump 0)))
                (jump-end  (when else (c8-eval-form-0 env '(jump 0)))))
-           (print jump-else)
+
            (setf test (c8-eval-form-0 env test)
                  then (c8-eval-0 env (rest then))
                  (cadar jump-else) (env-pc env)
