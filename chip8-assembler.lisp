@@ -196,8 +196,8 @@
            (setf test (c8-eval-form-0 env test)
                  then (c8-eval-0 env (rest then))
                  (cdr jump-else) (list (env-pc env))
-                 else (c8-eval-0 env (rest else))
-                 (cdr jump-end) (when else (list (env-pc env))))
+                 else (c8-eval-0 env (rest else)))
+           (when jump-end (setf (cdr jump-end) (list (env-pc env))))
            (append test jump-else then jump-end else)))
         
         (t (c8-eval-0 env (list test then else)))))
