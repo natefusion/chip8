@@ -136,7 +136,19 @@
     (ST  . ST)
     (I   . I)))
 
-(defparameter +MATH+ '())
+(defmacro lm (fun &key (xpred 'identity) (ypred 'identity))
+  `(lambda (x y) (funcall #',fun (funcall #',xpred x) (funcall #',ypred y))))
+
+(defparameter +MATH+ `((&  . ,(lm logand))
+                       (\| . ,(lm logior))
+                       (<< . ,(lm ash))
+                       (>> . ,(lm ash :ypred -))
+                       (+  . ,(lm +))
+                       (-  . ,(lm -))
+                       (*  . ,(lm *))
+                       (/  . ,(lm /))
+                       (%  . ,(lm mod))
+                       (floor . ,(lm floor))))
 
 (defparameter +MAX-SIZE+ #x1000)
 (defparameter +START+ #x200)
@@ -149,6 +161,7 @@
   `(let (,spec) (if ,(car spec) ,then ,else)))
 
 (defstruct env
+  (output (make-array +MAX-SIZE+ :element-type '(unsigned-byte 8) :fill-pointer 0))
   (pc (+ +START+ +OFFSET+))
   (using-main? t)
   (initial-step-only? nil)
@@ -223,7 +236,7 @@
 
 (defun c8-macroexpand-0 (env macro args)
   `((macro ,(pairlis (macro-parameters macro) args)
-     ,@(c8-eval-0 env (macro-body macro)))))
+           ,@(c8-eval-0 env (macro-body macro)))))
 
 (defun c8-apply-0 (env app args)
   (let ((ins (cdr (assoc app +INSTRUCTIONS+)))
@@ -262,31 +275,37 @@
 (defun c8-eval-program-0 (env forms)
   (c8-insert-main-0 env (c8-eval-0 env forms)))
 
+(defun c8-eval-deref-1 (env address)
+  (aref (env-output env) (- address +START+)))
+
 (defun c8-eval-args-1 (env args)
   (loop for arg in args
-        collect
-        (if (listp arg)
-            (c8-apply-math-1 env (first arg) (rest arg))
-            (c8-eval-val-1 env arg))))
+        collect (c8-eval-arg-1 env arg)))
 
 (defun c8-apply-math-1 (env app args)
   (if-let (maff (cdr (assoc app +MATH+)))
     (apply maff (c8-eval-args-1 env args))
     (error "not maff: ~a ~a" app args)))
 
-(defun c8-eval-val-1 (env arg)
-  (if (numberp arg)
-      arg
-      (let ((val (cdr (assoc arg (env-values env))))
-            (scope (cdr (assoc arg *scope*))))
-        (cond (scope scope)
-              (val val)
-              (t (error "Unknown argument: ~a" arg))))))
+(defun c8-eval-arg-1 (env arg)
+  (cond ((numberp arg) arg)
+        
+        ((listp arg) (case (first arg)
+                       (@ (c8-eval-deref-1 env (c8-eval-arg-1 env (second arg))))
+                       (otherwise (c8-apply-math-1 env (first arg) (rest arg)))))
+        
+        (t (let ((val (cdr (assoc arg (env-values env))))
+                 (scope (cdr (assoc arg *scope*)))
+                 (pc (eq arg 'pc)))
+             (cond (scope scope)
+                   (val val)
+                   (pc (+ +START+ (length (env-output env))))
+                   (t (error "Unknown argument: ~a" arg)))))))
 
 (defun c8-eval-def-1 (env name value)
   (when (null value) (error "'def ~a' was not initialized" name))
   (when (assoc name (env-values env)) (error "Redefinition of ~a" name))
-  (push (cons name (c8-eval-val-1 env value)) (env-values env))
+  (push (cons name (c8-eval-arg-1 env value)) (env-values env))
   nil)
 
 (defun c8-eval-include-1 (env numbers)
@@ -294,12 +313,13 @@
 
 (defun c8-eval-macro-1 (env *scope* body)
   ;; dynamically scoped variable used for scoping in the language
-  (dolist (x *scope*) (setf (cdr x) (c8-eval-val-1 env (cdr x))))
-  (c8-eval-1 env body))
+  (dolist (x *scope*) (setf (cdr x) (c8-eval-arg-1 env (cdr x))))
+  (loop for form in body append (c8-eval-form-1 env form)))
 
-(defun c8-eval-1 (env forms)
-  (loop for form in forms 
-        append (c8-eval-form-1 env form)))
+(defun c8-eval-program-1 (env forms)
+  (dolist (form forms (env-output env))
+    (dolist (number (c8-eval-form-1 env form))
+      (vector-push number (env-output env)))))
 
 (defun c8-eval-form-1 (env form)
   (case (first form)
@@ -307,11 +327,6 @@
     (include (c8-eval-include-1 env (rest form)))
     (macro (c8-eval-macro-1 env (second form) (cddr form)))
     (otherwise (apply (first form) (c8-eval-args-1 env (rest form))))))
-
-(defun c8-eval-program-1 (env forms)
-  (if-let (f (c8-eval-1 env forms))
-    f
-    (error "Compilation failed: Your program is too big")))
 
 (defun c8-compile (filename &key (using-main? t) initial-step-only?)
   (let ((parsed (parse (clean (uiop:read-file-lines filename))))
@@ -327,4 +342,3 @@
                      :if-does-not-exist :create
                      :element-type 'unsigned-byte)
     (mapcar (lambda (x) (write-byte x f)) bytes)))
-
