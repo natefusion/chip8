@@ -1,7 +1,8 @@
 (defun wrap (line)
-  (if (char= #\( (char line 0))
-      line
-      (concatenate 'string "(" line ")")))
+  (case (char line 0)
+    (#\( line)
+    (#\. (nsubstitute #\  #\. line :test #'char=))
+    (otherwise (concatenate 'string "(" line ")"))))
 
 (defun c8-replace (ch)
   (case ch

@@ -7,39 +7,47 @@ def A #x7
 def D #x9
 
 : up
-include #x70 #x70 #x20 #x70 #xA8 #x20 #x50 #x50
+[include #x70
+        .#x70
+        .#x20
+        .#x70
+        .#xA8
+        .#x20
+        .#x50
+        .#x50]
+        
 : down
 include #x50 #x50 #x20 #xA8 #x70 #x20 #x70 #x70
 
-(proc if-w-pressed
+[proc if-w-pressed
   set i up
-  add py #xFF)
+  add py #xFF]
 
-(proc if-s-pressed
+[proc if-s-pressed
   set i down
-  add py 1)
+  add py 1]
   
-(proc if-a-pressed
+[proc if-a-pressed
   set i up
-  add px #xFF)
+  add px #xFF]
 
 ; this is a comment
-(proc main
+[proc main
   rand px #b0011111
   rand py #b0001111
   set i up  
   draw px py 8
 
-  (loop
+  [loop
     draw px py 8 , ; this is another comment
 
-    (; commas can be used to put more
-       than one statement on one line without parens)
+    [; commas can be used to put more
+       than one statement on one line without parens]
        
     set v0 W , eq v0 key
     call if-w-pressed
 
-    (set v0 S) (eq v0 key)
+    [set v0 S] [eq v0 key]
     call if-s-pressed
 
     set v0 A , eq v0 key
@@ -50,16 +58,16 @@ include #x50 #x50 #x20 #xA8 #x70 #x20 #x70 #x70
 
     draw px py 8
 
-    (loop
+    [loop
       set ve dt
-      neq ve 0)
+      neq ve 0]
 
     set ve 3
-    set dt ve))
+    set dt ve]]
 
-(proc if-d-pressed
+[proc if-d-pressed
   set i up
-  add px 1)
+  add px 1]
     
 
 
