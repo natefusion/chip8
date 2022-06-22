@@ -3,17 +3,19 @@
       line
       (concatenate 'string "(" line ")")))
 
+(defun c8-replace (ch)
+  (case ch
+    (#\, ")(")
+    (#\; "\\;")
+    (#\: "\\:")
+    (#\| "|\\||")
+    (#\[ "(")
+    (#\] ")")
+    (otherwise (string ch))))
+
 (defun make-sexp (line)
-  (apply #'concatenate 'string
-         (map 'list
-              (lambda (ch)
-                (case ch
-                  (#\, ")(")
-                  (#\; "\\;")
-                  (#\: "\\:")
-                  (#\| "|\\||")
-                  (otherwise (string ch))))
-              (wrap line))))
+  (wrap (apply #'concatenate 'string
+               (map 'list #'c8-replace line))))
 
 (defun trim (lines)
   (loop :for l :in lines
