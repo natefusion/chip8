@@ -62,79 +62,54 @@
         :finally (return (list (ash (logand op #xFF00) -8)
                                (logand op #xFF)))))
 
-(defmacro make-instruction (name &body alist)
-  `(defun ,name (&rest args)
+(defmacro make-instruction (&body alist)
+  `(lambda (&rest args)
      (emit-op (combine-op (cdr (assoc (mapcar #'c8-type args) ',alist :test #'equal))
                           (remove-if #'builtin-val? (mapcar #'c8-eval-v args))))))
 
-(make-instruction c8-eq
-  ((V V)   9 X Y 0)
-  ((V N)   4 X KK)
-  ((V KEY) E X A 1))
-
-(make-instruction c8-neq
-  ((V KEY) E X 9 E)
-  ((V V)   5 X Y 0)
-  ((V N)   3 X KK))
-
-(make-instruction c8-set
-  ((V N)   6 X KK)
-  ((V V)   8 X Y 0)
-  ((I N)   A NNN)
-  ((V DT)  F X 0 7)
-  ((DT V)  F X 1 5)
-  ((V ST)  F X 1 8)
-  ((I V)   F X 2 9)
-  ((V KEY) F X 0 A))
-
-(make-instruction c8-add
-  ((V N) 7 X KK)
-  ((V V) 8 X Y 4)
-  ((I V) F X 1 E))
-
-(make-instruction c8-or   ((V V) 8 X Y 1))
-(make-instruction c8-and  ((V V) 8 X Y 2))
-(make-instruction c8-xor  ((V V) 8 X Y 3))
-(make-instruction c8-sub  ((V V) 8 X Y 5))
-(make-instruction c8-shr  ((V V) 8 X Y 6))
-(make-instruction c8-subn ((V V) 8 X Y 7))
-(make-instruction c8-shl  ((V V) 8 X Y E))
-
-(make-instruction c8-rand ((V N)   C X KK))
-(make-instruction c8-draw ((V V N) D X Y N))
-
-(make-instruction c8-bcd   ((V) F X 3 3))
-(make-instruction c8-write ((V) F X 5 5))
-(make-instruction c8-read  ((V) F X 6 5))
-
-(make-instruction c8-clear (()  0 0 E 0))
-(make-instruction c8-ret   (()  0 0 E E))
-(make-instruction c8-call  ((N) 2 NNN))
-(make-instruction c8-jump  ((N) 1 NNN))
-(make-instruction c8-jump0 ((N) B NNN))
-
 (defparameter +INSTRUCTIONS+
-  `((EQ    . ,#'c8-eq)
-    (NEQ   . ,#'c8-neq)
-    (SET   . ,#'c8-set)
-    (ADD   . ,#'c8-add)
-    (OR    . ,#'c8-or)
-    (AND   . ,#'c8-and)
-    (XOR   . ,#'c8-xor)
-    (SUB   . ,#'c8-sub)
-    (SHR   . ,#'c8-shr)
-    (SUBN  . ,#'c8-subn)
-    (SHL   . ,#'c8-shl)
-    (RAND  . ,#'c8-rand)
-    (DRAW  . ,#'c8-draw)
-    (BCD   . ,#'c8-bcd)
-    (WRITE . ,#'c8-write)
-    (READ  . ,#'c8-read)
-    (CLEAR . ,#'c8-clear)
-    (RET   . ,#'c8-ret)
-    (CALL  . ,#'c8-call)
-    (JUMP  . ,#'c8-jump)
-    (JUMP0 . ,#'c8-jump0)))
+  `((EQ    . ,(make-instruction
+                ((V V)   9 X Y 0)
+                ((V N)   4 X KK)
+                ((V KEY) E X A 1)))
+    
+    (NEQ   . ,(make-instruction
+                ((V KEY) E X 9 E)
+                ((V V)   5 X Y 0)
+                ((V N)   3 X KK)))
+    
+    (SET   . ,(make-instruction
+                ((V N)   6 X KK)
+                ((V V)   8 X Y 0)
+                ((I N)   A NNN)
+                ((V DT)  F X 0 7)
+                ((DT V)  F X 1 5)
+                ((V ST)  F X 1 8)
+                ((I V)   F X 2 9)
+                ((V KEY) F X 0 A)))
+    
+    (ADD   . ,(make-instruction
+                ((V N) 7 X KK)
+                ((V V) 8 X Y 4)
+                ((I V) F X 1 E)))
+    
+    (OR    . ,(make-instruction ((V V) 8 X Y 1)))
+    (AND   . ,(make-instruction ((V V) 8 X Y 2)))
+    (XOR   . ,(make-instruction ((V V) 8 X Y 3)))
+    (SUB   . ,(make-instruction ((V V) 8 X Y 5)))
+    (SHR   . ,(make-instruction ((V V) 8 X Y 6)))
+    (SUBN  . ,(make-instruction ((V V) 8 X Y 7)))
+    (SHL   . ,(make-instruction ((V V) 8 X Y E)))
+    (RAND  . ,(make-instruction ((V N) C X KK)))
+    (DRAW  . ,(make-instruction ((V V N) D X Y N)))
+    (BCD   . ,(make-instruction ((V) F X 3 3)))
+    (WRITE . ,(make-instruction ((V) F X 5 5)))
+    (READ  . ,(make-instruction ((V) F X 6 5)))
+    (CLEAR . ,(make-instruction (() 0 0 E 0)))
+    (RET   . ,(make-instruction (() 0 0 E E)))
+    (CALL  . ,(make-instruction ((N) 2 NNN)))
+    (JUMP  . ,(make-instruction ((N) 1 NNN)))
+    (JUMP0 . ,(make-instruction ((N) B NNN)))))
 
 (defparameter +BUILTIN-VALUES+
   '((V0  V #x0)
@@ -219,7 +194,7 @@
          ;; so I will do it beforehand and manually add the jump instruction
          (incf (env-pc env) (if else 4 2))
          
-         (let* ((jump (lambda () `((,#'c8-jump ,(env-pc env)))))
+         (let* ((jump (lambda () `((,(cdr (assoc 'jump +INSTRUCTIONS+)) ,(env-pc env)))))
                 (test (c8-eval-form-0 env test))
                 (then (c8-eval-0 env (rest then)))
                 (jump-else (funcall jump))
