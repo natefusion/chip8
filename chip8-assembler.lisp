@@ -188,18 +188,16 @@
            (neq (setf (first test) 'eq))
            (otherwise (error "Test for if statement must be either 'eq' or 'neq'")))
 
-         ;; accounts for the jump instructions
-         ;; evaluating the jump instructions 'normally' will
-         ;;   increment the pc either too early or too late
-         ;; so I will do it beforehand and manually add the jump instruction
-         (incf (env-pc env) (if else 4 2))
-         
-         (let* ((jump (lambda () `((,(cdr (assoc 'jump +INSTRUCTIONS+)) ,(env-pc env)))))
-                (test (c8-eval-form-0 env test))
-                (then (c8-eval-0 env (rest then)))
-                (jump-else (funcall jump))
-                (else (c8-eval-0 env (rest else)))
-                (jump-end (when else (funcall jump))))
+         ;; Evaluate the jump instructions before anything else
+         ;; this will ensure the program counter is correct
+         (let ((jump-else (c8-eval-form-0 env '(jump 0)))
+               (jump-end  (when else (c8-eval-form-0 env '(jump 0)))))
+           
+           (setf test (c8-eval-form-0 env test)
+                 then (c8-eval-0 env (rest then))
+                 (cdr jump-else) (list (env-pc env))
+                 else (c8-eval-0 env (rest else))
+                 (cdr jump-end) (when else (list (env-pc env))))
            (append test jump-else then jump-end else)))
         
         (t (c8-eval-0 env (list test then else)))))
