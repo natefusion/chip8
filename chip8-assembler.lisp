@@ -201,6 +201,9 @@
            (when jump-end (setf (cadar jump-end) (env-pc env)))
            (append test jump-else then jump-end else)))
         
+        ((> (length else) 1)
+         (error "If statements w/out then and else can only contain two instructions:~%(if ~a ~a ~a)"
+                test then (first else)))
         (t (c8-eval-0 env (list* test then else)))))
 
 (defun c8-eval-include-0 (env form)
