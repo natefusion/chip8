@@ -181,12 +181,12 @@
           (setf pc +START+)
           (setf jump-to-main pc)))))
 
-(defun c8-eval-label-0 (env name)
+(defun c8-eval-label-0 (env name &optional numbers)
   (when (null name) (error "Label not given a name"))
   (when (assoc name (env-values env)) (error "Redefinition of ~a" name))
   (c8-check-main-0 env name)
   (push (cons name (env-pc env)) (env-values env))
-  nil)
+  (c8-eval-include-0 env (list* 'include numbers)))
 
 (defun c8-eval-proc-0 (env name body)
   (c8-eval-label-0 env name)
@@ -261,7 +261,7 @@
         (def (list form))
         (proc (c8-eval-proc-0 env (second form) (cddr form)))
         (if (c8-eval-if-0 env (second form) (third form) (cdddr form)))
-        (\: (c8-eval-label-0 env (cadr form)))
+        (\: (c8-eval-label-0 env (cadr form) (cddr form)))
         (loop (c8-eval-loop-0 env (rest form)))
         (include (c8-eval-include-0 env form))
         (macro (c8-eval-macro-0 env form))
