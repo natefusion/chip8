@@ -148,6 +148,7 @@
 (defstruct env
   (pc (+ +START+ +OFFSET+))
   (using-main? t)
+  (initial-step-only? nil)
   (jump-to-main nil)
   (values (copy-alist +BUILTIN-VALUES+))
   macros)
@@ -222,7 +223,7 @@
   (let ((ins (cdr (assoc app +INSTRUCTIONS+)))
         (mac (cdr (assoc app (env-macros env)))))
     (cond (ins (incf (env-pc env) 2)
-               (list (list* ins args)))
+               (list (list* (if (env-initial-step-only? env) app ins) args)))
           (mac (incf (macro-calls mac))
                (c8-macroexpand-0 env mac (list* (macro-calls mac) args)))
           (t (error "Unknown application (~a) in: ~a ~a" app app args)))))
@@ -308,7 +309,7 @@
 
 (defun c8-compile (filename &key (using-main? t) initial-step-only?)
   (let ((parsed (parse (clean (uiop:read-file-lines filename))))
-        (env (make-env :using-main? using-main?)))
+        (env (make-env :using-main? using-main? :initial-step-only? initial-step-only?)))
     (if initial-step-only?
         (c8-eval-program-0 env parsed)
         (c8-eval-program-1 env (c8-eval-program-0 env parsed)))))
