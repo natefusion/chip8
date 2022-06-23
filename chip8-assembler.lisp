@@ -164,8 +164,9 @@
   (output (make-array +MAX-SIZE+ :element-type '(unsigned-byte 8) :fill-pointer 0))
   (pc (+ +START+ +OFFSET+))
   (using-main? t)
-  (initial-step-only? nil)
   (jump-to-main nil)
+  (has-main? t)
+  (initial-step-only? nil)
   values
   labels
   macros)
@@ -188,8 +189,9 @@
                    (t arg))))))
 
 (defun c8-check-main-0 (env name)
-  (with-slots (pc using-main? jump-to-main) env
+  (with-slots (pc using-main? jump-to-main has-main?) env
     (when (and using-main? (eq name 'main))
+      (setf has-main? t)
       (if (= (+ +START+ +OFFSET+) pc)
           (setf pc +START+)
           (setf jump-to-main pc)))))
@@ -274,10 +276,10 @@
           (t (error "Unknown application (~a) in: ~a ~a" app app args)))))
 
 (defun c8-insert-main-0 (env forms)
-  (with-slots (using-main? jump-to-main) env
+  (with-slots (using-main? jump-to-main has-main?) env
     (cond ((not using-main?) forms)
           (jump-to-main (append (c8-eval-form-0 env `(JUMP ,jump-to-main)) forms))
-          ((assoc 'main (env-labels env)) forms)
+          (has-main? forms)
           (t (error "Could not find main label")))))
 
 (defun c8-eval-form-0 (env form)
