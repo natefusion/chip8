@@ -275,7 +275,6 @@
 (defun c8-eval-form-0 (env form)
   (if (listp form)
       (case (first form)
-        (\; nil)
         (def (c8-eval-def-0 env (second form) (third form)))
         (proc (c8-eval-proc-0 env (second form) (cddr form)))
         (if (c8-eval-if-0 env (second form) (third form) (fourth form)))
