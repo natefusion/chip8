@@ -117,6 +117,30 @@
     (JUMP  . ,(make-instruction ((N) 1 NNN)))
     (JUMP0 . ,(make-instruction ((N) B NNN)))))
 
+(defstruct (macro (:constructor mk-macro (parameters body)))
+  (calls 0) parameters body)
+
+(defparameter +BUILTIN-MACROS+
+  `((GT . ,(mk-macro '(calls x y)
+                     '((set vf x)
+                       (sub vf x)
+                       (eq vf 0))))
+    
+    (GE . ,(mk-macro '(calls x y)
+                     '((set vf y)
+                       (subn vf x)
+                       (neq vf 0))))
+    
+    (LT . ,(mk-macro '(calls x y)
+                     '((set vf y)
+                       (subn vf x)
+                       (eq vf 0))))
+    
+    (LE . ,(mk-macro '(calls x y)
+                     '((set vf y)
+                       (sub vf x)
+                       (neq vf 0))))))
+
 (defparameter +BUILTIN-VALUES+
   '((V0  V #x0)
     (V1  V #x1)
@@ -158,10 +182,7 @@
   (initial-step-only? nil)
   values
   labels
-  macros)
-
-(defstruct (macro (:constructor mk-macro (parameters body)))
-  (calls 0) parameters body)
+  (macros (copy-alist +BUILTIN-MACROS+)))
 
 (defvar *scope* nil)
 
@@ -212,10 +233,15 @@
 
 (defun c8-eval-if-0 (env test then else)
   (cond ((eq (first then) 'then)
-         (case (first test)
-           (eq (setf (first test) 'neq))
-           (neq (setf (first test) 'eq))
-           (otherwise (error "Test for if statement must be either 'eq' or 'neq'")))
+         (setf (first test)
+               (case (first test)
+                 (eq 'neq)
+                 (neq 'eq)
+                 (gt 'le)
+                 (ge 'lt)
+                 (lt 'ge)
+                 (le 'gt)
+                 (otherwise (error "Test for if statement must be either 'eq' or 'neq'"))))
 
          ;; Evaluate the jump instructions before anything else
          ;; this will ensure the program counter is correct
