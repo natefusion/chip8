@@ -18,9 +18,12 @@
   (wrap (apply #'concatenate 'string
                (map 'list #'c8-replace line))))
 
+(defun remove-comment (line)
+  (subseq line 0 (position #\; line :test #'char=)))
+
 (defun trim (lines)
   (loop :for l :in lines
-        :for trimmed = (string-trim " " l)
+        :for trimmed = (remove-comment (string-trim " " l))
         :unless (uiop:emptyp trimmed)
           :collect trimmed))
 
@@ -151,7 +154,7 @@
   (pc (+ +START+ +OFFSET+))
   (using-main? t)
   (jump-to-main nil)
-  (has-main? t)
+  (has-main? nil)
   (initial-step-only? nil)
   values
   labels
@@ -244,6 +247,7 @@
         (parameters (list* 'calls (third form)))
         (body (cdddr form)))
     (when (assoc name (env-macros env)) (error "Macro already defined ~a" form))
+    (when (assoc name +INSTRUCTIONS+) (error "Cannot redefine instruction: ~a" name))
     (push (cons name (mk-macro parameters body)) (env-macros env))
     nil))
 
@@ -314,6 +318,7 @@
              (*  (lm * rest))
              (/  (lm / rest))
              (%  (lm mod rest))
+             (^  (lm logxor rest))
              (floor (lm floor rest))
              (otherwise (error "Invalid application: ~a" arg)))))
         (t (let ((label (cdr (assoc arg (env-labels env))))
