@@ -166,13 +166,26 @@
   (using-main? t)
   (initial-step-only? nil)
   (jump-to-main nil)
-  (values (copy-alist +BUILTIN-VALUES+))
+  values
+  labels
   macros)
 
 (defstruct (macro (:constructor mk-macro (parameters body)))
   (calls 0) parameters body)
 
 (defvar *scope* nil)
+
+(defun c8-eval-args-0 (env args)
+  (loop for arg in args collect (c8-eval-arg-0 env arg)))
+
+(defun c8-eval-arg-0 (env arg)
+  (cond ((numberp arg) arg)
+        ((listp arg) (list (first arg) (c8-eval-arg-0 env (cadr arg))))
+        (t (let ((val (cdr (assoc arg (env-values env))))
+                 (scope (cdr (assoc arg *scope*))))
+             (cond (scope scope)
+                   (val val)
+                   (t arg))))))
 
 (defun c8-check-main-0 (env name)
   (with-slots (pc using-main? jump-to-main) env
@@ -183,10 +196,18 @@
 
 (defun c8-eval-label-0 (env name &optional numbers)
   (when (null name) (error "Label not given a name"))
-  (when (assoc name (env-values env)) (error "Redefinition of ~a" name))
+  (when (or (assoc name (env-labels env))
+            (assoc name (env-values env))) (error "Redefinition of ~a" name))
   (c8-check-main-0 env name)
-  (push (cons name (env-pc env)) (env-values env))
-  (c8-eval-include-0 env (list* 'include numbers)))
+  (push (cons name (env-pc env)) (env-labels env))
+  (when numbers (c8-eval-include-0 env numbers)))
+
+(defun c8-eval-def-0 (env name value)
+  (when (null value) (error "'def ~a' was not initialized" name))
+  (when (or (assoc name (env-values env))
+            (assoc name (env-labels env))) (error "Redefinition of ~a" name))
+  (push (cons name (c8-eval-arg-0 env value)) (env-values env))
+  nil)
 
 (defun c8-eval-proc-0 (env name body)
   (c8-eval-label-0 env name)
@@ -213,15 +234,22 @@
            (setf test (c8-eval-form-0 env test)
                  then (c8-eval-0 env (rest then))
                  (cadar jump-else) (env-pc env)
-                 else (c8-eval-0 env (cdar else)))
+                 else (c8-eval-0 env (rest else)))
            (when jump-end (setf (cadar jump-end) (env-pc env)))
            (append test jump-else then jump-end else)))
         
-        (t (c8-eval-0 env (list* test then else)))))
+        (t (let* ((test (c8-eval-form-0 env test))
+                  (then (c8-eval-form-0 env then))
+                  (else (when else (c8-eval-form-0 env else)))
+                  (statement (append test then else)))
 
-(defun c8-eval-include-0 (env form)
-  (incf (env-pc env) (length (rest form)))
-  (list form))
+             (when (> (length statement) 3)
+               (error "If statements w/out then/else can only have two instructions. Here is yours: ~& (if ~a ~a ~a)" test then else))
+             statement))))
+
+(defun c8-eval-include-0 (env numbers)
+  (incf (env-pc env) (length numbers))
+  (list (list* 'include (c8-eval-args-0 env numbers))))
 
 (defun c8-eval-macro-0 (env form)
   (let ((name (second form))
@@ -232,12 +260,13 @@
     nil))
 
 (defun c8-macroexpand-0 (env macro args)
-  `((macro ,(pairlis (macro-parameters macro) args)
-           ,@(c8-eval-0 env (macro-body macro)))))
+  (let ((*scope* (append (pairlis (macro-parameters macro) args) *scope*)))
+    (c8-eval-0 env (macro-body macro))))
 
 (defun c8-apply-0 (env app args)
   (let ((ins (cdr (assoc app +INSTRUCTIONS+)))
-        (mac (cdr (assoc app (env-macros env)))))
+        (mac (cdr (assoc app (env-macros env))))
+        (args (c8-eval-args-0 env args)))
     (cond (ins (incf (env-pc env) 2)
                (list (list* (if (env-initial-step-only? env) app ins) args)))
           (mac (incf (macro-calls mac))
@@ -248,19 +277,19 @@
   (with-slots (using-main? jump-to-main) env
     (cond ((not using-main?) forms)
           (jump-to-main (append (c8-eval-form-0 env `(JUMP ,jump-to-main)) forms))
-          ((assoc 'main (env-values env)) forms)
+          ((assoc 'main (env-labels env)) forms)
           (t (error "Could not find main label")))))
 
 (defun c8-eval-form-0 (env form)
   (if (listp form)
       (case (first form)
         (\; nil)
-        (def (list form))
+        (def (c8-eval-def-0 env (second form) (third form)))
         (proc (c8-eval-proc-0 env (second form) (cddr form)))
-        (if (c8-eval-if-0 env (second form) (third form) (cdddr form)))
+        (if (c8-eval-if-0 env (second form) (third form) (fourth form)))
         (\: (c8-eval-label-0 env (cadr form) (cddr form)))
         (loop (c8-eval-loop-0 env (rest form)))
-        (include (c8-eval-include-0 env form))
+        (include (c8-eval-include-0 env (rest form)))
         (macro (c8-eval-macro-0 env form))
         (otherwise (c8-apply-0 env (first form) (rest form))))
       (error "'~a' is not a valid form" form)))
@@ -286,32 +315,20 @@
 
 (defun c8-eval-arg-1 (env arg)
   (cond ((numberp arg) arg)
-        
-        ((listp arg) (case (first arg)
-                       (@ (c8-eval-deref-1 env (c8-eval-arg-1 env (second arg))))
-                       (otherwise (c8-apply-math-1 env (first arg) (rest arg)))))
-        
-        (t (let ((val (cdr (assoc arg (env-values env))))
-                 (scope (cdr (assoc arg *scope*)))
+        ((listp arg)
+         (case (first arg)
+           (@ (c8-eval-deref-1 env (c8-eval-arg-1 env (second arg))))
+           (otherwise (c8-apply-math-1 env (first arg) (rest arg)))))
+        (t (let ((label (cdr (assoc arg (env-labels env))))
+                 (val (cdr (assoc arg +BUILTIN-VALUES+)))
                  (pc (eq arg 'pc)))
-             (cond (scope scope)
-                   (val val)
+             (cond (val val)
+                   (label label)
                    (pc (+ +START+ (length (env-output env))))
                    (t (error "Unknown argument: ~a" arg)))))))
 
-(defun c8-eval-def-1 (env name value)
-  (when (null value) (error "'def ~a' was not initialized" name))
-  (when (assoc name (env-values env)) (error "Redefinition of ~a" name))
-  (push (cons name (c8-eval-arg-1 env value)) (env-values env))
-  nil)
-
 (defun c8-eval-include-1 (env numbers)
   (c8-eval-args-1 env numbers))
-
-(defun c8-eval-macro-1 (env *scope* body)
-  ;; dynamically scoped variable used for scoping in the language
-  (dolist (x *scope*) (setf (cdr x) (c8-eval-arg-1 env (cdr x))))
-  (loop for form in body append (c8-eval-form-1 env form)))
 
 (defun c8-eval-program-1 (env forms)
   (dolist (form forms (env-output env))
@@ -320,9 +337,7 @@
 
 (defun c8-eval-form-1 (env form)
   (case (first form)
-    (def (c8-eval-def-1 env (second form) (third form)))
     (include (c8-eval-include-1 env (rest form)))
-    (macro (c8-eval-macro-1 env (second form) (cddr form)))
     (otherwise (apply (first form) (c8-eval-args-1 env (rest form))))))
 
 (defun c8-compile (filename &key (using-main? t) initial-step-only?)
