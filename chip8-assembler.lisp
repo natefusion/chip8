@@ -271,14 +271,14 @@
           (t (error "Unknown application (~a) in: ~a ~a" app app args)))))
 
 (defun c8-eval-loop-0 (env body)
-  (let* ((pc (c8-apply-0 env 'JUMP (list (env-pc env))))
+  (let* ((pc (env-pc env))
          (lp (c8-eval-0 env body)))
-    (append lp pc)))
+    (append lp (c8-eval-form-0 env `(JUMP, pc)))))
 
 (defun c8-eval-proc-0 (env name body)
   (c8-eval-label-0 env name)
   (append (c8-eval-0 env body)
-          (unless (eq name 'main) (c8-apply-0 env 'ret '()))))
+          (unless (eq name 'main) (c8-eval-form-0 env '(ret)))))
 
 (defun c8-eval-if-0 (env test then else)
   (cond ((eq (first then) 'then)
@@ -316,7 +316,7 @@
 (defun c8-insert-main-0 (env forms)
   (with-slots (using-main? jump-to-main has-main?) env
     (cond ((not using-main?) forms)
-          (jump-to-main (append (c8-apply-0 env 'JUMP (list jump-to-main)) forms))
+          (jump-to-main (append (c8-eval-form-0 env `(JUMP ,jump-to-main)) forms))
           (has-main? forms)
           (t (error "Could not find main label")))))
 

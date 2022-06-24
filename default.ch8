@@ -1,11 +1,6 @@
 def px v1
 def py v2
 
-def W #x5
-def S #x8
-def A #x7
-def D #x9
-
 [: up #x70
      .#x70
      .#x20
@@ -40,19 +35,19 @@ include #x50 #x50 #x20 #xA8 #x70 #x20 #x70 #x70
   [loop
     draw px py 8
 
-    set v0 W , eq v0 key
+    set v0 KEY-W , eq v0 key
     call if-w-pressed
 
-    [set v0 S]
+    [set v0 KEY-S]
     [if (eq v0 key)
       call if-s-pressed]
 
-    set v0 A
+    set v0 KEY-A
     [if (eq v0 key)
       [then
         if-a-pressed #xFF]]
 
-    set v0 D
+    set v0 KEY-D
     eq v0 key , call if-d-pressed
 
     draw px py 8
