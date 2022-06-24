@@ -25,17 +25,14 @@
   (subseq line 0 (position #\; line :test #'char=)))
 
 (defun trim (lines)
-  (loop :for l :in lines
-        :for trimmed = (remove-comment (string-trim " " l))
-        :unless (uiop:emptyp trimmed)
-          :collect trimmed))
-
-(defun clean (input)
-  (apply #'concatenate 'string
-         (mapcar #'make-sexp (trim input))))
+  (loop for l in lines
+        for trimmed = (remove-comment (string-trim " " l))
+        unless (uiop:emptyp trimmed)
+          collect (make-sexp trimmed) into f
+        finally (return (apply #'concatenate 'string f))))
 
 (defun parse (filename)
-  (eval (read-from-string (concatenate 'string "'(" (clean (uiop:read-file-lines filename)) ")"))))
+  (eval (read-from-string (concatenate 'string "'(" (trim (uiop:read-file-lines filename)) ")"))))
 
 (defparameter +BUILTIN-VALUES+
   `((V0  V #x0)
