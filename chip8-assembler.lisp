@@ -31,73 +31,75 @@
   (apply #'concatenate 'string
          (mapcar #'make-sexp (trim input))))
 
-(defun c8-eval-v (exp)
-  (if (when (listp exp) (eq (first exp) 'V))
-      (second exp)
-      exp))
+(defun v-reg? (exp)
+  (and (listp exp) (eq (first exp) 'V)))
 
-(defun builtin-val? (exp)
-  (assoc exp +BUILTIN-VALUES+))
+(defun strip-ins-args (args)
+  (mapcar (lambda (x) (if (v-reg? x) (second x) x))
+          (remove-if (lambda (x) (assoc x +BUILTIN-VALUES+)) args)))
 
 (defun c8-type (exp)
   (cond
-    ((and (listp exp) (eq (first exp) 'V)) 'V)
-    ((builtin-val? exp) exp)
     ((numberp exp) 'N)
+    ((v-reg? exp) 'V)
+    ((assoc exp +BUILTIN-VALUES+) exp)
     (t nil)))
 
+(defun get-ins-shell (args alist)
+  (cdr (assoc (mapcar #'c8-type args) alist :test #'equal)))
+
 (defun to-bytes (num)
-  (loop :for n :across (format nil "~x" num)
-        :collect (parse-integer (string n) :radix 16)))
+  (labels ((b (x) (list* (logand x #xFF)
+                         (when (> x #xFF) (to-bytes (ash x -8))))))
+    (reverse (b num))))
 
 (defun combine-op (shell args)
-  (loop :for x :in shell
-        :append (to-bytes
-                 (case x
+  (loop for byte in shell
+        append (to-bytes
+                 (case byte
                    ((x nnn) (first args))
                    (kk (first (last args)))
                    (y (second args))
                    (n (third args))
-                   (otherwise x)))))
+                   (otherwise byte)))))
 
 (defun emit-op (shell)
-  (loop :for byte :in shell
-        :for shift :in (case (length shell) (2 '(12 0)) (3 '(12 8 0)) (4 '(12 8 4 0)))
-        :with op := 0
-        :do (setf op (logior op (ash byte shift)))
-        :finally (return (list (ash (logand op #xFF00) -8)
-                               (logand op #xFF)))))
+  (loop for byte in shell
+        for shift in (case (length shell) (2 '(12 0)) (3 '(12 8 0)) (4 '(12 8 4 0)))
+        with op = 0
+        do (setf op (logior op (ash byte shift)))
+        finally (return (list (ash (logand op #xFF00) -8)
+                              (logand op #xFF)))))
 
 (defmacro make-instruction (&body alist)
   `(lambda (&rest args)
-     (emit-op (combine-op (cdr (assoc (mapcar #'c8-type args) ',alist :test #'equal))
-                          (remove-if #'builtin-val? (mapcar #'c8-eval-v args))))))
+     (emit-op (combine-op (get-ins-shell args ',alist) (strip-ins-args args)))))
 
 (defparameter +INSTRUCTIONS+
   `((EQ    . ,(make-instruction
                 ((V V)   9 X Y 0)
                 ((V N)   4 X KK)
-                ((V KEY) E X A 1)))
+                ((V KEY) #xE X #xA 1)))
     
     (NEQ   . ,(make-instruction
-                ((V KEY) E X 9 E)
+                ((V KEY) #xE X 9 #xE)
                 ((V V)   5 X Y 0)
                 ((V N)   3 X KK)))
     
     (SET   . ,(make-instruction
                 ((V N)   6 X KK)
                 ((V V)   8 X Y 0)
-                ((I N)   A NNN)
-                ((V DT)  F X 0 7)
-                ((DT V)  F X 1 5)
-                ((V ST)  F X 1 8)
-                ((I V)   F X 2 9)
-                ((V KEY) F X 0 A)))
+                ((I N)   #xA NNN)
+                ((V DT)  #xF X 0 7)
+                ((DT V)  #xF X 1 5)
+                ((V ST)  #xF X 1 8)
+                ((I V)   #xF X 2 9)
+                ((V KEY) #xF X 0 #xA)))
     
     (ADD   . ,(make-instruction
                 ((V N) 7 X KK)
                 ((V V) 8 X Y 4)
-                ((I V) F X 1 E)))
+                ((I V) #xF X 1 #xE)))
     
     (OR    . ,(make-instruction ((V V) 8 X Y 1)))
     (AND   . ,(make-instruction ((V V) 8 X Y 2)))
@@ -105,17 +107,17 @@
     (SUB   . ,(make-instruction ((V V) 8 X Y 5)))
     (SHR   . ,(make-instruction ((V V) 8 X Y 6)))
     (SUBN  . ,(make-instruction ((V V) 8 X Y 7)))
-    (SHL   . ,(make-instruction ((V V) 8 X Y E)))
-    (RAND  . ,(make-instruction ((V N) C X KK)))
-    (DRAW  . ,(make-instruction ((V V N) D X Y N)))
-    (BCD   . ,(make-instruction ((V) F X 3 3)))
-    (WRITE . ,(make-instruction ((V) F X 5 5)))
-    (READ  . ,(make-instruction ((V) F X 6 5)))
-    (CLEAR . ,(make-instruction (() 0 0 E 0)))
-    (RET   . ,(make-instruction (() 0 0 E E)))
+    (SHL   . ,(make-instruction ((V V) 8 X Y #xE)))
+    (RAND  . ,(make-instruction ((V N) #xC X KK)))
+    (DRAW  . ,(make-instruction ((V V N) #xD X Y N)))
+    (BCD   . ,(make-instruction ((V) #xF X 3 3)))
+    (WRITE . ,(make-instruction ((V) #xF X 5 5)))
+    (READ  . ,(make-instruction ((V) #xF X 6 5)))
+    (CLEAR . ,(make-instruction (() 0 0 #xE 0)))
+    (RET   . ,(make-instruction (() 0 0 #xE #xE)))
     (CALL  . ,(make-instruction ((N) 2 NNN)))
     (JUMP  . ,(make-instruction ((N) 1 NNN)))
-    (JUMP0 . ,(make-instruction ((N) B NNN)))))
+    (JUMP0 . ,(make-instruction ((N) #xB NNN)))))
 
 (defstruct macro (calls 0) parameters body)
 
@@ -144,7 +146,7 @@
                        (neq vf 0))))))
 
 (defparameter +BUILTIN-VALUES+
-  '((V0  V #x0)
+  `((V0  V #x0)
     (V1  V #x1)
     (V2  V #x2)
     (V3  V #x3)
@@ -163,7 +165,25 @@
     (KEY . KEY)
     (DT  . DT)
     (ST  . ST)
-    (I   . I)))
+    (I   . I)
+    (KEY-1 . #x1)
+    (KEY-2 . #x2)
+    (KEY-3 . #x3)
+    (KEY-4 . #xC)
+    (KEY-Q . #x4)
+    (KEY-W . #x5)
+    (KEY-E . #x6)
+    (KEY-R . #xD)
+    (KEY-A . #x7)
+    (KEY-S . #x8)
+    (KEY-D . #x9)
+    (KEY-F . #xE)
+    (KEY-Z . #xA)
+    (KEY-X . #x0)
+    (KEY-C . #xB)
+    (KEY-V . #xF)
+    (PI . ,PI)
+    (E  . ,(exp 1))))
 
 (defparameter +MAX-SIZE+ #x1000)
 (defparameter +START+ #x200)
@@ -337,6 +357,7 @@
            (case (first arg)
              (&  (logand x y))
              (\| (logior x y))
+             (^  (logxor x y))
              (<< (ash x y))
              (>> (ash x (- y)))
              (+  (+ x y))
@@ -344,7 +365,6 @@
              (*  (* x y))
              (/  (/ x y))
              (%  (mod x y))
-             (^  (logxor x y))
              (pow (expt x y))
              (min (min x y))
              (max (max x y))
@@ -362,7 +382,7 @@
              (tan (tan x))
              (exp (exp x))
              (log (log x))
-             (abs (abs x ))
+             (abs (abs x))
              (sqrt (sqrt x))
              (sign (signum x))
              (ceil (ceiling x))
@@ -377,7 +397,8 @@
                    (t (error "Unknown argument: ~a" arg)))))))
 
 (defun c8-eval-include-1 (env numbers)
-  (c8-eval-args-1 env numbers))
+  (loop for n in numbers
+        collect (logand (truncate (c8-eval-arg-1 env n)) #xFF)))
 
 (defun c8-eval-program-1 (env forms)
   (dolist (form forms (env-output env))

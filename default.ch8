@@ -38,11 +38,8 @@ include #x50 #x50 #x20 #xA8 #x70 #x20 #x70 #x70
   draw px py 8
 
   [loop
-    draw px py 8 , ; this is another comment
+    draw px py 8
 
-    [; commas can be used to put more
-       than one statement on one line without parens]
-       
     set v0 W , eq v0 key
     call if-w-pressed
 
@@ -70,11 +67,3 @@ include #x50 #x50 #x20 #xA8 #x70 #x20 #x70 #x70
 [proc if-d-pressed
   set i up
   add px 1]
-    
-
-
-
-
-
-
-
