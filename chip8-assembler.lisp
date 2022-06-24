@@ -365,7 +365,7 @@
              (abs (abs x ))
              (sqrt (sqrt x))
              (sign (signum x))
-             (ceiling (ceiling x))
+             (ceil (ceiling x))
              (floor (floor x))
              (otherwise (error "Invalid application: ~a" arg)))))
         (t (let ((label (cdr (assoc arg (env-labels env))))
