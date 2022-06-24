@@ -1,3 +1,6 @@
+(defmacro if-let (spec then &optional else)
+  `(let (,spec) (if ,(car spec) ,then ,else)))
+
 (defun wrap (line)
   (case (char line 0)
     (#\( line)
@@ -30,6 +33,75 @@
 (defun clean (input)
   (apply #'concatenate 'string
          (mapcar #'make-sexp (trim input))))
+
+(defun parse (filename)
+  (eval (read-from-string (concatenate 'string "'(" (clean (uiop:read-file-lines filename)) ")"))))
+
+(defparameter +BUILTIN-VALUES+
+  `((V0  V #x0)
+    (V1  V #x1)
+    (V2  V #x2)
+    (V3  V #x3)
+    (V4  V #x4)
+    (V5  V #x5)
+    (V6  V #x6)
+    (V7  V #x7)
+    (V8  V #x8)
+    (V9  V #x9)
+    (VA  V #xA)
+    (VB  V #xB)
+    (VC  V #xC)
+    (VD  V #xD)
+    (VE  V #xE)
+    (VF  V #xF)
+    (KEY . KEY)
+    (DT  . DT)
+    (ST  . ST)
+    (I   . I)
+    (KEY-1 . #x1)
+    (KEY-2 . #x2)
+    (KEY-3 . #x3)
+    (KEY-4 . #xC)
+    (KEY-Q . #x4)
+    (KEY-W . #x5)
+    (KEY-E . #x6)
+    (KEY-R . #xD)
+    (KEY-A . #x7)
+    (KEY-S . #x8)
+    (KEY-D . #x9)
+    (KEY-F . #xE)
+    (KEY-Z . #xA)
+    (KEY-X . #x0)
+    (KEY-C . #xB)
+    (KEY-V . #xF)
+    (PI . ,PI)
+    (E  . ,(exp 1))))
+
+(defstruct macro (calls 0) parameters body)
+
+(defun mk-macro (parameters body)
+  (make-macro :parameters (list* 'calls parameters) :body body))
+
+(defparameter +BUILTIN-MACROS+
+  `((GT . ,(mk-macro '(x y)
+                     '((set vf x)
+                       (sub vf x)
+                       (eq vf 0))))
+    
+    (GE . ,(mk-macro '(x y)
+                     '((set vf y)
+                       (subn vf x)
+                       (neq vf 0))))
+    
+    (LT . ,(mk-macro '(x y)
+                     '((set vf y)
+                       (subn vf x)
+                       (eq vf 0))))
+    
+    (LE . ,(mk-macro '(x y)
+                     '((set vf y)
+                       (sub vf x)
+                       (neq vf 0))))))
 
 (defun v-reg? (exp)
   (and (listp exp) (eq (first exp) 'V)))
@@ -119,81 +191,10 @@
     (JUMP  . ,(make-instruction ((N) 1 NNN)))
     (JUMP0 . ,(make-instruction ((N) #xB NNN)))))
 
-(defstruct macro (calls 0) parameters body)
-
-(defun mk-macro (parameters body)
-  (make-macro :parameters (list* 'calls parameters) :body body))
-
-(defparameter +BUILTIN-MACROS+
-  `((GT . ,(mk-macro '(x y)
-                     '((set vf x)
-                       (sub vf x)
-                       (eq vf 0))))
-    
-    (GE . ,(mk-macro '(x y)
-                     '((set vf y)
-                       (subn vf x)
-                       (neq vf 0))))
-    
-    (LT . ,(mk-macro '(x y)
-                     '((set vf y)
-                       (subn vf x)
-                       (eq vf 0))))
-    
-    (LE . ,(mk-macro '(x y)
-                     '((set vf y)
-                       (sub vf x)
-                       (neq vf 0))))))
-
-(defparameter +BUILTIN-VALUES+
-  `((V0  V #x0)
-    (V1  V #x1)
-    (V2  V #x2)
-    (V3  V #x3)
-    (V4  V #x4)
-    (V5  V #x5)
-    (V6  V #x6)
-    (V7  V #x7)
-    (V8  V #x8)
-    (V9  V #x9)
-    (VA  V #xA)
-    (VB  V #xB)
-    (VC  V #xC)
-    (VD  V #xD)
-    (VE  V #xE)
-    (VF  V #xF)
-    (KEY . KEY)
-    (DT  . DT)
-    (ST  . ST)
-    (I   . I)
-    (KEY-1 . #x1)
-    (KEY-2 . #x2)
-    (KEY-3 . #x3)
-    (KEY-4 . #xC)
-    (KEY-Q . #x4)
-    (KEY-W . #x5)
-    (KEY-E . #x6)
-    (KEY-R . #xD)
-    (KEY-A . #x7)
-    (KEY-S . #x8)
-    (KEY-D . #x9)
-    (KEY-F . #xE)
-    (KEY-Z . #xA)
-    (KEY-X . #x0)
-    (KEY-C . #xB)
-    (KEY-V . #xF)
-    (PI . ,PI)
-    (E  . ,(exp 1))))
-
 (defparameter +MAX-SIZE+ #x1000)
 (defparameter +START+ #x200)
 (defparameter +OFFSET+ 2)
-
-(defun parse (cleaned)
-  (eval (read-from-string (concatenate 'string "'(" cleaned ")"))))
-
-(defmacro if-let (spec then &optional else)
-  `(let (,spec) (if ,(car spec) ,then ,else)))
+(defvar *scope* nil)
 
 (defstruct env
   (output (make-array +MAX-SIZE+ :element-type '(unsigned-byte 8) :fill-pointer 0))
@@ -206,7 +207,7 @@
   labels
   (macros (copy-alist +BUILTIN-MACROS+)))
 
-(defvar *scope* nil)
+(declaim (ftype function c8-eval-arg-0 c8-eval-0 c8-eval-form-0))
 
 (defun c8-eval-args-0 (env args)
   (loop for arg in args collect (c8-eval-arg-0 env arg)))
@@ -219,6 +220,10 @@
         (cond (scope scope)
               (val val)
               (t arg)))))
+
+(defun c8-eval-include-0 (env numbers)
+  (incf (env-pc env) (length numbers))
+  (list (list* 'include (c8-eval-args-0 env numbers))))
 
 (defun c8-check-main-0 (env name)
   (with-slots (pc using-main? jump-to-main has-main?) env
@@ -245,15 +250,38 @@
   (push (cons name (c8-eval-arg-0 env value)) (env-values env))
   nil)
 
+(defun c8-eval-macro-0 (env form)
+  (let ((name (second form))
+        (parameters (third form))
+        (body (cdddr form)))
+    (when (assoc name (env-macros env)) (error "Macro already defined ~a" form))
+    (when (assoc name +INSTRUCTIONS+) (error "Cannot redefine instruction: ~a" name))
+    (push (cons name (mk-macro parameters body)) (env-macros env))
+    nil))
+
+(defun c8-macroexpand-0 (env macro args)
+  (let ((*scope* (append (pairlis (macro-parameters macro) args) *scope*)))
+    (c8-eval-0 env (macro-body macro))))
+
+(defun c8-apply-0 (env app args)
+  (let ((ins (cdr (assoc app +INSTRUCTIONS+)))
+        (mac (cdr (assoc app (env-macros env))))
+        (args (c8-eval-args-0 env args)))
+    (cond (ins (incf (env-pc env) 2)
+               (list (list* (if (env-initial-step-only? env) app ins) args)))
+          (mac (incf (macro-calls mac))
+               (c8-macroexpand-0 env mac (list* (macro-calls mac) args)))
+          (t (error "Unknown application (~a) in: ~a ~a" app app args)))))
+
+(defun c8-eval-loop-0 (env body)
+  (let* ((pc (c8-apply-0 env 'JUMP (list (env-pc env))))
+         (lp (c8-eval-0 env body)))
+    (append lp pc)))
+
 (defun c8-eval-proc-0 (env name body)
   (c8-eval-label-0 env name)
   (append (c8-eval-0 env body)
-          (unless (eq name 'main) (c8-eval-form-0 env '(ret)))))
-
-(defun c8-eval-loop-0 (env body)
-  (let* ((pc (env-pc env))
-         (lp (c8-eval-0 env body)))
-    (append lp (c8-eval-form-0 env `(JUMP ,pc)))))
+          (unless (eq name 'main) (c8-apply-0 env 'ret '()))))
 
 (defun c8-eval-if-0 (env test then else)
   (cond ((eq (first then) 'then)
@@ -288,37 +316,10 @@
                (error "If statements w/out then/else can only have two instructions. Here is yours: ~& (if ~a ~a ~a)" test then else))
              statement))))
 
-(defun c8-eval-include-0 (env numbers)
-  (incf (env-pc env) (length numbers))
-  (list (list* 'include (c8-eval-args-0 env numbers))))
-
-(defun c8-eval-macro-0 (env form)
-  (let ((name (second form))
-        (parameters (third form))
-        (body (cdddr form)))
-    (when (assoc name (env-macros env)) (error "Macro already defined ~a" form))
-    (when (assoc name +INSTRUCTIONS+) (error "Cannot redefine instruction: ~a" name))
-    (push (cons name (mk-macro parameters body)) (env-macros env))
-    nil))
-
-(defun c8-macroexpand-0 (env macro args)
-  (let ((*scope* (append (pairlis (macro-parameters macro) args) *scope*)))
-    (c8-eval-0 env (macro-body macro))))
-
-(defun c8-apply-0 (env app args)
-  (let ((ins (cdr (assoc app +INSTRUCTIONS+)))
-        (mac (cdr (assoc app (env-macros env))))
-        (args (c8-eval-args-0 env args)))
-    (cond (ins (incf (env-pc env) 2)
-               (list (list* (if (env-initial-step-only? env) app ins) args)))
-          (mac (incf (macro-calls mac))
-               (c8-macroexpand-0 env mac (list* (macro-calls mac) args)))
-          (t (error "Unknown application (~a) in: ~a ~a" app app args)))))
-
 (defun c8-insert-main-0 (env forms)
   (with-slots (using-main? jump-to-main has-main?) env
     (cond ((not using-main?) forms)
-          (jump-to-main (append (c8-eval-form-0 env `(JUMP ,jump-to-main)) forms))
+          (jump-to-main (append (c8-apply-0 env 'JUMP (list jump-to-main)) forms))
           (has-main? forms)
           (t (error "Could not find main label")))))
 
@@ -341,6 +342,8 @@
 
 (defun c8-eval-program-0 (env forms)
   (c8-insert-main-0 env (c8-eval-0 env forms)))
+
+(declaim (ftype function c8-eval-arg-1))
 
 (defun c8-eval-args-1 (env args)
   (loop for arg in args
@@ -400,18 +403,18 @@
   (loop for n in numbers
         collect (logand (truncate (c8-eval-arg-1 env n)) #xFF)))
 
-(defun c8-eval-program-1 (env forms)
-  (dolist (form forms (env-output env))
-    (dolist (number (c8-eval-form-1 env form))
-      (vector-push number (env-output env)))))
-
 (defun c8-eval-form-1 (env form)
   (case (first form)
     (include (c8-eval-include-1 env (rest form)))
     (otherwise (apply (first form) (c8-eval-args-1 env (rest form))))))
 
+(defun c8-eval-program-1 (env forms)
+  (dolist (form forms (env-output env))
+    (dolist (number (c8-eval-form-1 env form))
+      (vector-push number (env-output env)))))
+
 (defun c8-compile (filename &key (using-main? t) initial-step-only?)
-  (let ((parsed (parse (clean (uiop:read-file-lines filename))))
+  (let ((parsed (parse filename))
         (env (make-env :using-main? using-main? :initial-step-only? initial-step-only?)))
     (if initial-step-only?
         (c8-eval-program-0 env parsed)
