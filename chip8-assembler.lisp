@@ -4,7 +4,7 @@
 (defun wrap (line)
   (case (char line 0)
     (#\( line)
-    (#\. (nsubstitute #\  #\. line :test #'char=))
+    (#\. (nsubstitute #\  #\. line :end 1 :test #'char=))
     (otherwise (concatenate 'string "(" line ")"))))
 
 (defun c8-replace (ch)
@@ -35,27 +35,7 @@
   (eval (read-from-string (concatenate 'string "'(" (trim (uiop:read-file-lines filename)) ")"))))
 
 (defparameter +BUILTIN-VALUES+
-  `((V0  V #x0)
-    (V1  V #x1)
-    (V2  V #x2)
-    (V3  V #x3)
-    (V4  V #x4)
-    (V5  V #x5)
-    (V6  V #x6)
-    (V7  V #x7)
-    (V8  V #x8)
-    (V9  V #x9)
-    (VA  V #xA)
-    (VB  V #xB)
-    (VC  V #xC)
-    (VD  V #xD)
-    (VE  V #xE)
-    (VF  V #xF)
-    (KEY . KEY)
-    (DT  . DT)
-    (ST  . ST)
-    (I   . I)
-    (KEY-1 . #x1)
+  `((KEY-1 . #x1)
     (KEY-2 . #x2)
     (KEY-3 . #x3)
     (KEY-4 . #xC)
@@ -101,17 +81,27 @@
                        (neq vf 0))))))
 
 (defun v-reg? (exp)
-  (and (listp exp) (eq (first exp) 'V)))
+  (case exp
+    (v0 0) (v1 1) (v2 2) (v3 3)
+    (v4 4) (v5 5) (v6 6) (v7 7)
+    (v8 8) (v9 9) (va #xa) (vb #xb)
+    (vc #xc) (vd #xd) (ve #xe) (vf #xf)))
+
+(defun fake? (exp)
+  (case exp ((KEY DT ST I) t)))
+
+(defun special? (exp)
+  (or (v-reg? exp) (fake? exp)))
 
 (defun strip-ins-args (args)
-  (mapcar (lambda (x) (if (v-reg? x) (second x) x))
-          (remove-if (lambda (x) (assoc x +BUILTIN-VALUES+)) args)))
+  (mapcar (lambda (x) (if-let (v (v-reg? x)) v x))
+          (remove-if #'fake? args)))
 
 (defun c8-type (exp)
   (cond
     ((numberp exp) 'N)
     ((v-reg? exp) 'V)
-    ((assoc exp +BUILTIN-VALUES+) exp)
+    ((fake? exp) exp)
     (t nil)))
 
 (defun get-ins-shell (args alist)
@@ -200,7 +190,7 @@
   (jump-to-main nil)
   (has-main? nil)
   (initial-step-only? nil)
-  values
+  (values (copy-alist +BUILTIN-VALUES+))
   labels
   (macros (copy-alist +BUILTIN-MACROS+)))
 
@@ -233,7 +223,8 @@
 (defun c8-eval-label-0 (env name &optional numbers)
   (when (null name) (error "Label not given a name"))
   (when (or (assoc name (env-labels env))
-            (assoc name (env-values env)))
+            (assoc name (env-values env))
+            (special? name))
     (error "Redefinition of ~a" name))
   (c8-check-main-0 env name)
   (push (cons name (env-pc env)) (env-labels env))
@@ -242,7 +233,8 @@
 (defun c8-eval-def-0 (env name value)
   (when (null value) (error "'def ~a' was not initialized" name))
   (when (or (assoc name (env-values env))
-            (assoc name (env-labels env)))
+            (assoc name (env-labels env))
+            (special? name))
     (error "Redefinition of ~a" name))
   (push (cons name (c8-eval-arg-0 env value)) (env-values env))
   nil)
@@ -253,6 +245,7 @@
         (body (cdddr form)))
     (when (assoc name (env-macros env)) (error "Macro already defined ~a" form))
     (when (assoc name +INSTRUCTIONS+) (error "Cannot redefine instruction: ~a" name))
+    (when (find-if #'special? parameters) (error "Special variables cannot be shadowed"))
     (push (cons name (mk-macro parameters body)) (env-macros env))
     nil))
 
@@ -389,11 +382,10 @@
              (floor (floor x))
              (otherwise (error "Invalid application: ~a" arg)))))
         (t (let ((label (cdr (assoc arg (env-labels env))))
-                 (val (cdr (assoc arg +BUILTIN-VALUES+)))
                  (pc (eq arg 'pc)))
-             (cond (val val)
-                   (label label)
+             (cond (label label)
                    (pc (+ +START+ (length (env-output env))))
+                   ((special? arg) arg)
                    (t (error "Unknown argument: ~a" arg)))))))
 
 (defun c8-eval-include-1 (env numbers)
