@@ -250,6 +250,7 @@
     nil))
 
 (defun c8-macroexpand-0 (env macro args)
+  ;; TODO: Remove this dynamic variable, I don't like it
   (let ((*scope* (append (pairlis (macro-parameters macro) args) *scope*)))
     (c8-eval-0 env (macro-body macro))))
 
@@ -409,10 +410,10 @@
         (c8-eval-program-0 env parsed)
         (c8-eval-program-1 env (c8-eval-program-0 env parsed)))))
 
-(defun chip8-write (bytes filename)
+(defun c8-write (bytes filename)
   (with-open-file (f filename
                      :direction :output
                      :if-exists :supersede
                      :if-does-not-exist :create
                      :element-type 'unsigned-byte)
-    (mapcar (lambda (x) (write-byte x f)) bytes)))
+    (map 'nil (lambda (x) (write-byte x f)) bytes)))
