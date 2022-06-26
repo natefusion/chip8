@@ -399,9 +399,12 @@
     (otherwise (apply (first form) (c8-eval-args-1 env (rest form))))))
 
 (defun c8-eval-program-1 (env forms)
-  (dolist (form forms (env-output env))
-    (dolist (number (c8-eval-form-1 env form))
-      (vector-push number (env-output env)))))
+  (with-slots (output) env
+    (dolist (form forms output)
+      (dolist (number (c8-eval-form-1 env form))
+        (when (>= (fill-pointer output) (array-total-size output)) 
+          (error "Your program is too large!"))
+        (vector-push number output)))))
 
 (defun c8-compile (filename &key (using-main? t) initial-step-only?)
   (let ((parsed (parse filename))
