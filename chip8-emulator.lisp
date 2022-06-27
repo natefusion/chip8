@@ -221,9 +221,9 @@
                    last (+ last diff))
              
              (with-slots (st dt draw-flag gfx waiting) chip
-               (loop for k from 0 below 2
+               (loop repeat 2
                      while (< origin (- last frame-time))
-                     do (loop for z from 0 below tickrate
+                     do (loop repeat tickrate
                               while (not waiting)
                               do (emulate-cycle chip))
                      do (incf origin frame-time))
