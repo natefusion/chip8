@@ -148,7 +148,9 @@
         ((#xF _ 0 7) (setf (aref v x) dt))
         
         ((#xF _ 0 #xA) (if-let (pos (position-if (lambda (v) (= v 1)) keys))
-                         (setf (aref v x) pos) (setf waiting t)))
+                         (setf (aref v x) pos
+                               waiting nil)
+                         (setf waiting t)))
         
         ((#xF _ 1 #x5) (setf dt (aref v x)))
         ((#xF _ 1 #x8) (setf st (aref v x)))
