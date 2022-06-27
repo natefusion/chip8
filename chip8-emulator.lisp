@@ -60,16 +60,14 @@
     (set-mem chip :game (c8-compile filename) :font +FONT+)
     chip))
 
+
 (defmacro match (pattern &body clauses)
-  `(cond
-     ,@(mapcar
-        (lambda (clause)
-          (cons (flet ((ekual (x y) (or (equal x y) (equal x '_))))
-                  (if (listp (car clause))
-                      `(every ,#'ekual ',(car clause) ,pattern)
-                      `(funcall ,#'ekual ',(car clause) ,pattern)))
-           (cdr clause)))
-        clauses)))
+  `(cond ,@(dolist (clause clauses clauses)
+             (setf (car clause)
+                   (flet ((ekual (x y) (or (equal x y) (equal x '_))))
+                     (if (listp (car clause))
+                         `(every ,#'ekual ',(car clause) ,pattern)
+                         `(funcall ,#'ekual ',(car clause) ,pattern)))))))
 
 (defun chop (number size &optional (pos 0))
   (ldb (byte size pos) number))
