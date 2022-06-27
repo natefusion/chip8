@@ -73,7 +73,7 @@
   (ldb (byte size pos) number))
 
 (defun emulate-cycle (chip8)
-  (with-slots (mem v i pc dt st stack sp gfx draw-flag waiting  keys) chip8
+  (with-slots (mem v i pc dt st stack sp gfx draw-flag waiting keys) chip8
     (let* ((opcode (dpb (aref mem pc) (byte 8 8) (aref mem (1+ pc))))
            (nnn    (chop opcode 12))
            (nn     (chop opcode 8))
@@ -202,37 +202,47 @@
        (sdl2:with-renderer (,renderer ,window :index -1 :flags '(:accelerated))
          (sdl2:with-event-loop (:method :poll) ,@body)))))
 
+(defstruct timing frame-time tickrate last origin)
+
+(defun init-timing ()
+  (let* ((frame-time (/ 1000 60))
+         (last (get-internal-real-time))
+         (origin (+ last (/ frame-time 2))))
+    (make-timing :frame-time frame-time
+                 :last last
+                 :origin origin
+                 :tickrate 20)))
+
+(defun idle-loop (timing chip renderer)
+  (with-slots (frame-time tickrate last origin) timing
+    (incf last (- (get-internal-real-time) last))
+
+    (with-slots (st dt draw-flag gfx waiting) chip
+      (loop repeat 2
+            while (< origin (- last frame-time))
+            do (loop repeat tickrate
+                     while (not waiting)
+                     do (emulate-cycle chip))
+            do (incf origin frame-time))
+      
+      (when draw-flag
+        (draw-frame gfx renderer)
+        (setf draw-flag nil))
+      
+      (when (> st 0) (decf st))
+      (when (> dt 0) (decf dt)))
+
+    (sleep (/ frame-time 1000))))
+
 (defun chip8 (game)
   (let* ((chip (make-chip8))
-         (frame-time (/ 1000 60))
-         (last (get-internal-real-time))
-         diff
-         (origin (+ last (/ frame-time 2)))
-         (tickrate 20))
+         (timing (init-timing)))
     (set-mem chip :game (c8-compile game) :font +FONT+)
     (with-sdl2 (window renderer) game
       (:quit () t)
       (:keydown (:keysym keysym) (set-key chip (sdl2:scancode keysym) 1))
       (:keyup   (:keysym keysym) (set-key chip (sdl2:scancode keysym) 0))
-      (:idle ()
-             (setf diff (- (get-internal-real-time) last)
-                   last (+ last diff))
-             
-             (with-slots (st dt draw-flag gfx waiting) chip
-               (loop repeat 2
-                     while (< origin (- last frame-time))
-                     do (loop repeat tickrate
-                              while (not waiting)
-                              do (emulate-cycle chip))
-                     do (incf origin frame-time))
-
-               (when draw-flag
-                 (draw-frame gfx renderer)
-                 (setf draw-flag nil))
-
-               (when (> st 0) (decf st))
-               (when (> dt 0) (decf dt)))
-             (sleep (/ frame-time 1000))))))
+      (:idle () (idle-loop timing chip renderer)))))
 
 (defun main ()
   (if (= (length *posix-argv*) 2)
