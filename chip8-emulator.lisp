@@ -165,42 +165,30 @@
         (otherwise (error "Unknown opcode: #x~X~%W: ~X, X: ~X, Y: ~X, N: ~X"
                           opcode w x y n))))))
 
-(defun draw-frame (gfx renderer)
-  (destructuring-bind (n m) (array-dimensions gfx)
-    (dotimes (x n)
-      (dotimes (y m)
-        (let ((sx (* x +SCALE+))
-              (sy (* y +SCALE+)))
-          (if (zerop (aref gfx x y))
-              (sdl2:set-render-draw-color renderer 255 255 255 255)
-              (sdl2:set-render-draw-color renderer 0   0   0   255))
-          (sdl2:with-rects ((x sx sy +SCALE+ +SCALE+))
-            (sdl2:render-fill-rect renderer x)))))
-    (sdl2:render-present renderer)))
+(defun draw-frame (gfx)
+  (raylib:with-drawing
+    (raylib:clear-background raylib:+white+)
 
-(defun set-key (chip keycode key-state)
-  (setf (bit (chip8-keys chip)
-             (case keycode
-               (:SCANCODE-1 #x1) (:SCANCODE-2 #x2)
-               (:SCANCODE-3 #x3) (:SCANCODE-4 #xC)
-               (:SCANCODE-Q #x4) (:SCANCODE-W #x5)
-               (:SCANCODE-E #x6) (:SCANCODE-R #xD)
-               (:SCANCODE-A #x7) (:SCANCODE-S #x8)
-               (:SCANCODE-D #x9) (:SCANCODE-F #xE)
-               (:SCANCODE-Z #xA) (:SCANCODE-X #x0)
-               (:SCANCODE-C #xB) (:SCANCODE-V #xF)
-               (otherwise (return-from set-key))))
-        key-state))
+    (dotimes (x (array-dimension gfx 0))
+      (dotimes (y (array-dimension gfx 1))
+        (unless (zerop (aref gfx x y))
+          (raylib:draw-rectangle (* x +SCALE+) (* y +SCALE+)
+                                 +SCALE+ +SCALE+
+                                 raylib:+black+))))))
 
-(defmacro with-sdl2 ((window renderer) filename &body body)
-  `(sdl2:with-init (:video)
-     (sdl2:with-window (,window
-                        :title (format nil "Chip8 Emulator | ~A" ,filename)
-                        :w (* ,+SCALE+ ,+W+)
-                        :h (* ,+SCALE+ ,+H+)
-                        :flags '(:shown))
-       (sdl2:with-renderer (,renderer ,window :index -1 :flags '(:accelerated))
-         (sdl2:with-event-loop (:method :poll) ,@body)))))
+(defmacro with-keys ((predicate) &body clauses)
+  `(cond ,@(dolist (clause clauses clauses)
+             (setf (car clause)
+                   `(funcall ,predicate ,(car clause))))))
+
+(defun set-key (chip)
+  (loop for key in (list raylib:+key-X+ raylib:+key-one+ raylib:+key-two+ raylib:+key-three+
+                         raylib:+key-Q+ raylib:+key-W+ raylib:+key-E+ raylib:+key-A+
+                         raylib:+key-S+ raylib:+key-D+ raylib:+key-Z+ raylib:+key-C+
+                         raylib:+key-four+ raylib:+key-R+ raylib:+key-F+ raylib:+key-V+)
+        for index from 0
+        do (setf (bit (chip8-keys chip) index) (if (raylib:is-key-down key) 1 0))))
+
 
 (defstruct timing frame-time tickrate last origin)
 
@@ -213,7 +201,9 @@
                  :origin origin
                  :tickrate 20)))
 
-(defun idle-loop (timing chip renderer)
+(defun idle-loop (timing chip)
+  (set-key chip)
+  
   (with-slots (frame-time tickrate last origin) timing
     (incf last (- (get-internal-real-time) last))
 
@@ -226,23 +216,20 @@
             do (incf origin frame-time))
       
       (when draw-flag
-        (draw-frame gfx renderer)
+        (draw-frame gfx)
         (setf draw-flag nil))
       
       (when (> st 0) (decf st))
-      (when (> dt 0) (decf dt)))
-
-    (sleep (/ frame-time 1000))))
+      (when (> dt 0) (decf dt)))))
 
 (defun chip8 (game)
   (let* ((chip (make-chip8))
          (timing (init-timing)))
     (set-mem chip :game (c8-compile game) :font +FONT+)
-    (with-sdl2 (window renderer) game
-      (:quit () t)
-      (:keydown (:keysym keysym) (set-key chip (sdl2:scancode keysym) 1))
-      (:keyup   (:keysym keysym) (set-key chip (sdl2:scancode keysym) 0))
-      (:idle () (idle-loop timing chip renderer)))))
+    (raylib:with-window ((* +SCALE+ +W+) (* +SCALE+ +H+) (format nil "chip8 emulator | ~A" game))
+      (raylib:set-target-fps 60)
+      (loop until (raylib:window-should-close)
+            do (idle-loop timing chip)))))
 
 (defun main ()
   (if (= (length *posix-argv*) 2)
