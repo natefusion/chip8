@@ -1,13 +1,10 @@
 (deftype u8  () '(unsigned-byte 8))
 (deftype u16 () '(unsigned-byte 16))
 
-(defconstant +CYCLES-PER-SECOND+ 500)
-(defconstant +CYCLES-BEFORE-SLEEP+ 10)
-
-(defconstant +W+     64)
-(defconstant +H+     32)
-(defconstant +SCALE+ 10)
-(defconstant +MEM+   #x1000)
+(defparameter +W+     64)
+(defparameter +H+     32)
+(defparameter +SCALE+ 20)
+(defparameter +MEM+   #x1000)
 ;; (defconstant +START+ #x200)
 (defparameter +FONT+ #(#xF0 #x90 #x90 #x90 #xF0   ; 0
                       #x20 #x60 #x20 #x20 #x70   ; 1
@@ -165,16 +162,33 @@
         (otherwise (error "Unknown opcode: #x~X~%W: ~X, X: ~X, Y: ~X, N: ~X"
                           opcode w x y n))))))
 
-(defun draw-frame (gfx)
+(defun draw-frame (chip)
   (raylib:with-drawing
     (raylib:clear-background raylib:+white+)
-
-    (dotimes (x (array-dimension gfx 0))
-      (dotimes (y (array-dimension gfx 1))
-        (unless (zerop (aref gfx x y))
-          (raylib:draw-rectangle (* x +SCALE+) (* y +SCALE+)
-                                 +SCALE+ +SCALE+
-                                 raylib:+black+))))))
+    
+    (with-slots (v gfx i pc dt st) chip
+      (let ((vars (list (aref v 0) (aref v 1) (aref v 2) (aref v 3)
+                        (aref v 4) (aref v 5) (aref v 6) (aref v 7)
+                        (aref v 8) (aref v 9) (aref v 10) (aref v 11)
+                        (aref v 12) (aref v 13) (aref v 14) (aref v 15)
+                        i pc dt st))
+            (line (concatenate 'string
+                               "V0: ~A, V1: ~A, V2: ~A, V3: ~A~%"
+                               "V4: ~A, V5: ~A, V6: ~A, V7: ~A~%"
+                               "V8: ~A, V9: ~A, VA: ~A, VB: ~A~%"
+                               "VC: ~A, VD: ~A, VE: ~A, VF: ~A~%"
+                               "~%I: ~A, PC: ~A, DT: ~A, ST: ~A~%")))
+        (raylib:draw-text (apply #'format nil line vars)
+                          (* +SCALE+ +W+) 0
+                          30
+                          raylib:+black+))
+      
+      (dotimes (x (array-dimension gfx 0))
+        (dotimes (y (array-dimension gfx 1))
+          (unless (zerop (aref gfx x y))
+            (raylib:draw-rectangle (* x +SCALE+) (* y +SCALE+)
+                                   +SCALE+ +SCALE+
+                                   raylib:+black+)))))))
 
 (defmacro with-keys ((predicate) &body clauses)
   `(cond ,@(dolist (clause clauses clauses)
@@ -189,7 +203,6 @@
         for index from 0
         do (setf (bit (chip8-keys chip) index) (if (raylib:is-key-down key) 1 0))))
 
-
 (defstruct timing frame-time tickrate last origin)
 
 (defun init-timing ()
@@ -203,7 +216,7 @@
 
 (defun idle-loop (timing chip)
   (set-key chip)
-  
+
   (with-slots (frame-time tickrate last origin) timing
     (incf last (- (get-internal-real-time) last))
 
@@ -216,18 +229,21 @@
             do (incf origin frame-time))
       
       (when draw-flag
-        (draw-frame gfx)
-        (setf draw-flag nil))
-      
+        (draw-frame chip)
+        (setf draw-flag nil))      
+
       (when (> st 0) (decf st))
       (when (> dt 0) (decf dt)))))
+
+(defparameter *extra* 600)
 
 (defun chip8 (game)
   (let* ((chip (make-chip8))
          (timing (init-timing)))
     (set-mem chip :game (c8-compile game) :font +FONT+)
-    (raylib:with-window ((* +SCALE+ +W+) (* +SCALE+ +H+) (format nil "chip8 emulator | ~A" game))
+    (raylib:with-window ((+ *extra* (* +SCALE+ +W+)) (* +SCALE+ +H+) (format nil "chip8 emulator | ~A" game))
       (raylib:set-target-fps 60)
+
       (loop until (raylib:window-should-close)
             do (idle-loop timing chip)))))
 
