@@ -24,15 +24,15 @@
 (defun remove-comment (line)
   (subseq line 0 (position #\; line :test #'char=)))
 
-(defun trim (lines)
-  (loop for l in lines
-        for trimmed = (remove-comment (string-trim " " l))
-        unless (uiop:emptyp trimmed)
-          collect (make-sexp trimmed) into f
-        finally (return (apply #'concatenate 'string f))))
-
 (defun parse (filename)
-  (eval (read-from-string (concatenate 'string "'(" (trim (uiop:read-file-lines filename)) ")"))))
+  (with-open-file (f filename)
+    (loop for line = (read-line f nil)
+          for trimmed = (remove-comment (string-trim " " line))
+          while line
+          unless (uiop:emptyp trimmed)
+            collect (make-sexp trimmed) into final
+          finally (return (read-from-string (apply #'concatenate 'string
+                                                   (append '("(") final '(")"))))))))
 
 (defparameter +BUILTIN-VALUES+
   `((KEY-1 . #x1)
