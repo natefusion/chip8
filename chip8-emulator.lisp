@@ -152,31 +152,44 @@
 
 (defun draw-frame (chip)
   (raylib:with-drawing
-    (raylib:clear-background raylib:+white+)
+    (raylib:clear-background raylib:+yellow+)
     
     (with-slots (v gfx i pc dt st) chip
-      (let ((vars (list (aref v 0) (aref v 1) (aref v 2) (aref v 3)
-                        (aref v 4) (aref v 5) (aref v 6) (aref v 7)
-                        (aref v 8) (aref v 9) (aref v 10) (aref v 11)
-                        (aref v 12) (aref v 13) (aref v 14) (aref v 15)
+      (let ((vars (list (aref v 0) (aref v 4) (aref v 8) (aref v 12)
+                        (aref v 1) (aref v 5) (aref v 9) (aref v 13)
+                        (aref v 2) (aref v 6) (aref v 10) (aref v 14)
+                        (aref v 3) (aref v 7) (aref v 11) (aref v 15)
                         i pc dt st))
             (line (concatenate 'string
-                               "V0: ~A, V1: ~A, V2: ~A, V3: ~A~%"
-                               "V4: ~A, V5: ~A, V6: ~A, V7: ~A~%"
-                               "V8: ~A, V9: ~A, VA: ~A, VB: ~A~%"
-                               "VC: ~A, VD: ~A, VE: ~A, VF: ~A~%"
-                               "~%I: ~A, PC: ~A, DT: ~A, ST: ~A~%")))
+                               "V0: ~3D, V4: ~3D, V8: ~3D, VC: ~3D~%"
+                               "V1: ~3D, V5: ~3D, V9: ~3D, VD: ~3D~%"
+                               "V2: ~3D, V6: ~3D, VA: ~3D, VE: ~3D~%"
+                               "V3: ~3D, V7: ~3D, VB: ~3D, VF: ~3D~%"
+                               "~%I: ~3D~%PC: ~3D~%DT: ~3D~%ST: ~3D~%")))
+        ;; background
+        (raylib:draw-rectangle (+ 0 (* +SCALE+ +W+)) 10 
+                               (- *extra* 10) (- (* +SCALE+ +H+) 25)
+                               raylib:+blue+)
+        ;; shadow long
+        (raylib:draw-rectangle (- (* +SCALE+ +W+) 10) 20
+                               10 (- (* +SCALE+ +H+) 25)
+                               raylib:+black+)
+        ;; shadow wide
+        (raylib:draw-rectangle (+ 0 (* +SCALE+ +W+)) (- (* +SCALE+ +H+) 15)
+                               (- *extra* 20) 10
+                               raylib:+black+)
+        
         (raylib:draw-text (apply #'format nil line vars)
-                          (* +SCALE+ +W+) 0
+                          (+ 5 (* +SCALE+ +W+)) 13
                           30
-                          raylib:+black+))
+                          raylib:+yellow+))
       
       (dotimes (x (array-dimension gfx 0))
         (dotimes (y (array-dimension gfx 1))
           (unless (zerop (aref gfx x y))
             (raylib:draw-rectangle (* x +SCALE+) (* y +SCALE+)
                                    +SCALE+ +SCALE+
-                                   raylib:+black+)))))))
+                                   raylib:+blue+)))))))
 
 (defmacro with-keys ((predicate) &body clauses)
   `(cond ,@(dolist (clause clauses clauses)
@@ -218,23 +231,24 @@
       
       (when draw-flag
         (draw-frame chip)
-        (setf draw-flag nil))      
+        (setf draw-flag nil))
+      
 
       (when (> st 0) (decf st))
       (when (> dt 0) (decf dt)))))
 
-(defparameter *extra* 600)
+(defparameter *extra* 520)
 
 (defun chip8 (game)
   (let* ((chip (make-chip8))
          (timing (init-timing)))
     (set-mem chip :game (c8-compile game) :font +FONT+)
     (raylib:with-window ((+ *extra* (* +SCALE+ +W+)) (* +SCALE+ +H+) (format nil "chip8 emulator | ~A" game))
-      (raylib:set-target-fps 60)
+      (raylib:set-target-fps 15)
 
       (loop until (raylib:window-should-close)
             do (idle-loop timing chip)))))
-
+e
 (defun main ()
   (if (= (length *posix-argv*) 2)
       (chip8 (second *posix-argv*))
