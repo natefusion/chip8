@@ -1,6 +1,5 @@
 (deftype u8  () '(unsigned-byte 8))
 (deftype u16 () '(unsigned-byte 16))
-(deftype u12 () '(unsigned-byte 12))
 
 (defparameter +W+     64)
 (defparameter +H+     32)
@@ -42,11 +41,11 @@
 (defstruct chip8
   (mem (chip8-array +MEM+ :type 'u8))
   (v (chip8-array 16 :type 'u8))
-  (i 0 :type u12)
+  (i 0 :type u16)
   (pc +START+ :type u16)
   (dt 0 :type u8)
   (st 0 :type u8)
-  (stack (chip8-array 16 :type 'u12))
+  (stack (chip8-array 16 :type 'u16))
   (sp 0 :type u8)
   (gfx (chip8-array (list +W+ +H+) :type 'u8))
   (draw-flag nil :type boolean)
@@ -106,7 +105,7 @@
                      (setf (aref v #xF) (if (> diff #xFF) 1 0)
                            (aref v x)   (chop diff 8))))
         
-        ((8 _ _ #xE) (setf (aref v #xF) (chop (ash (aref v x) -7) 8)
+        ((8 _ _ #xE) (setf (aref v #xF) (ash (aref v x) -7)
                            (aref v x)   (chop (ash (aref v y) 1) 8)))
 
         ((9 _ _ 0) (when (/= (aref v x) (aref v y)) (incf pc 2)))
@@ -131,22 +130,22 @@
         
         ((#xF _ 0 7) (setf (aref v x) dt))
         
-        ((#xF _ 0 #xA) (if-let (pos (position-if (lambda (v) (= v 1)) keys))
+        ((#xF _ 0 #xA) (if-let (pos (position 1 keys))
                          (setf (aref v x) pos
                                waiting nil)
                          (setf waiting t)))
         
         ((#xF _ 1 #x5) (setf dt (aref v x)))
         ((#xF _ 1 #x8) (setf st (aref v x)))
-        ((#xF _ 1 #xE) (setf i (chop (+ i (aref v x)) 12)))
-        ((#xF _ 2 #x9) (setf i (chop (* 5 (aref v x)) 12)))
+        ((#xF _ 1 #xE) (setf i (chop (+ i (aref v x)) 16)))
+        ((#xF _ 2 #x9) (setf i (* 5 (aref v x))))
         
         ((#xF _ 3 3) (setf (aref mem (+ i 0)) (truncate (mod (/ (aref v x) 100) 10))
                            (aref mem (+ i 1)) (truncate (mod (/ (aref v x) 10) 10))
                            (aref mem (+ i 2)) (truncate (mod (/ (aref v x) 1) 10))))
 
-        ((#xF _ 5 5) (dotimes (a (1+ x)) (setf (aref mem (+ a i)) (aref v a))))
-        ((#xF _ 5 5) (dotimes (a (1+ x)) (setf (aref v a) (aref mem (+ a i)))))
+        ((#xF _ 5 5) (dotimes (a (1+ x)) (setf (aref mem (chop (+ a i) 16)) (aref v a))))
+        ((#xF _ 6 5) (dotimes (a (1+ x)) (setf (aref v a) (aref mem (chop (+ a i) 16)))))
         
         (otherwise (error "Unknown opcode: #x~X~%W: ~X, X: ~X, Y: ~X, N: ~X"
                           opcode w x y n))))))
