@@ -202,11 +202,6 @@
                                    +SCALE+ +SCALE+
                                    raylib:+blue+)))))))
 
-(defmacro with-keys ((predicate) &body clauses)
-  `(cond ,@(dolist (clause clauses clauses)
-             (setf (car clause)
-                   `(funcall ,predicate ,(car clause))))))
-
 (defun set-key (chip)
   (loop for key in (list raylib:+key-X+ raylib:+key-one+ raylib:+key-two+ raylib:+key-three+
                          raylib:+key-Q+ raylib:+key-W+ raylib:+key-E+ raylib:+key-A+
@@ -227,26 +222,25 @@
                  :tickrate 20)))
 
 (defun idle-loop (timing chip)
-  (set-key chip)
-
   (with-slots (frame-time tickrate last origin) timing
-    (incf last (- (get-internal-real-time) last))
+      (set-key chip)
+    
+      (incf last (- (get-internal-real-time) last))
 
-    (with-slots (st dt draw-flag gfx waiting) chip
-      (loop repeat 2
-            while (< origin (- last frame-time))
-            do (loop repeat tickrate
-                     while (not waiting)
-                     do (emulate-cycle chip))
-               (incf origin frame-time))
+      (with-slots (st dt draw-flag gfx waiting) chip
+        (loop repeat 2
+              while (< origin (- last frame-time))
+              do (loop repeat tickrate
+                       while (not waiting)
+                       do (emulate-cycle chip))
+                 (incf origin frame-time))
       
-      (when draw-flag
-        (draw-frame chip)
-        (setf draw-flag nil))
+        (when draw-flag
+          (draw-frame chip)
+          (setf draw-flag nil))
       
-
-      (when (> st 0) (decf st))
-      (when (> dt 0) (decf dt)))))
+        (when (> st 0) (decf st))
+        (when (> dt 0) (decf dt)))))
 
 (defparameter *extra* 520)
 
@@ -271,9 +265,11 @@
                   :font +FONT+)
     (raylib:with-window ((+ *extra* (* +SCALE+ +W+)) (* +SCALE+ +H+) (format nil "chip8 emulator | ~A" (if code code binary)))
       (raylib:set-target-fps 15)
-
       (loop until (raylib:window-should-close)
-            do (idle-loop timing chip)))))
+            ;; GOTCHA: raylib craps itself if with-drawing is not called
+            do (if (raylib:is-key-down raylib:+key-p+)
+                   (draw-frame chip)
+                   (idle-loop timing chip))))))
 
 (defun main ()
   (let ((command (second *posix-argv*))
