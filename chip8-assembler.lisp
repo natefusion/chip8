@@ -34,6 +34,17 @@
           finally (return (read-from-string (apply #'concatenate 'string
                                                    (append '("(") final '(")"))))))))
 
+(defmacro match (pattern &body clauses)
+  `(cond ,@(dolist (clause clauses clauses)
+             (setf (car clause)
+                   (flet ((ekual (x y) (or (equal x y) (equal x '_))))
+                     (if (listp (car clause))
+                         `(every ,#'ekual ',(car clause) ,pattern)
+                         `(funcall ,#'ekual ',(car clause) ,pattern)))))))
+
+(defun chop (number size &optional (pos 0))
+  (ldb (byte size pos) number))
+
 (defparameter +BUILTIN-VALUES+
   `((KEY-1 . #x1)
     (KEY-2 . #x2)
@@ -80,6 +91,18 @@
                        (sub vf x)
                        (neq vf 0))))))
 
+(defparameter +MAX-SIZE+ #x1000)
+(defparameter +START+ #x200)
+(defparameter +OFFSET+ 2)
+(defvar *scope* nil)
+
+(defun instruction? (exp)
+  (case exp
+    ((EQ NEQ SET ADD OR AND XOR SUB
+         SHR SUBN SHL RAND DRAW BCD WRITE
+         READ CLEAR RET CALL JUMP JUMP0)
+     t)))
+
 (defun v-reg? (exp)
   (case exp
     (v0 0) (v1 1) (v2 2) (v3 3)
@@ -93,103 +116,12 @@
 (defun special? (exp)
   (or (v-reg? exp) (fake? exp)))
 
-(defun strip-ins-args (args)
-  (mapcar (lambda (x) (if-let (v (v-reg? x)) v x))
-          (remove-if #'fake? args)))
-
-(defun c8-type (exp)
-  (cond
-    ((numberp exp) 'N)
-    ((v-reg? exp) 'V)
-    ((fake? exp) exp)
-    (t nil)))
-
-(defun get-ins-shell (args alist)
-  (cdr (assoc (mapcar #'c8-type args) alist :test #'equal)))
-
-(defun to-bytes (num)
-  (labels ((b (x) (list* (logand x #xFF)
-                         (when (> x #xFF) (to-bytes (ash x -8))))))
-    (reverse (b num))))
-
-(defun combine-op (shell args)
-  (loop for byte in shell
-        append (to-bytes
-                 (case byte
-                   ((x nnn) (first args))
-                   (kk (first (last args)))
-                   (y (second args))
-                   (n (third args))
-                   (otherwise byte)))))
-
-(defun emit-op (shell)
-  (loop for byte in shell
-        for shift in (case (length shell) (2 '(12 0)) (3 '(12 8 0)) (4 '(12 8 4 0)))
-        with op = 0
-        do (setf op (logior op (ash byte shift)))
-        finally (return (list (ash (logand op #xFF00) -8)
-                              (logand op #xFF)))))
-
-(defmacro make-instruction (&body alist)
-  `(lambda (&rest args)
-     (emit-op (combine-op (get-ins-shell args ',alist) (strip-ins-args args)))))
-
-(defparameter +INSTRUCTIONS+
-  `((EQ    . ,(make-instruction
-                ((V V)   9 X Y 0)
-                ((V N)   4 X KK)
-                ((V KEY) #xE X #xA 1)))
-    
-    (NEQ   . ,(make-instruction
-                ((V KEY) #xE X 9 #xE)
-                ((V V)   5 X Y 0)
-                ((V N)   3 X KK)))
-    
-    (SET   . ,(make-instruction
-                ((V N)   6 X KK)
-                ((V V)   8 X Y 0)
-                ((I N)   #xA NNN)
-                ((V DT)  #xF X 0 7)
-                ((DT V)  #xF X 1 5)
-                ((V ST)  #xF X 1 8)
-                ((I V)   #xF X 2 9)
-                ((V KEY) #xF X 0 #xA)))
-    
-    (ADD   . ,(make-instruction
-                ((V N) 7 X KK)
-                ((V V) 8 X Y 4)
-                ((I V) #xF X 1 #xE)))
-    
-    (OR    . ,(make-instruction ((V V) 8 X Y 1)))
-    (AND   . ,(make-instruction ((V V) 8 X Y 2)))
-    (XOR   . ,(make-instruction ((V V) 8 X Y 3)))
-    (SUB   . ,(make-instruction ((V V) 8 X Y 5)))
-    (SHR   . ,(make-instruction ((V V) 8 X Y 6)))
-    (SUBN  . ,(make-instruction ((V V) 8 X Y 7)))
-    (SHL   . ,(make-instruction ((V V) 8 X Y #xE)))
-    (RAND  . ,(make-instruction ((V N) #xC X KK)))
-    (DRAW  . ,(make-instruction ((V V N) #xD X Y N)))
-    (BCD   . ,(make-instruction ((V) #xF X 3 3)))
-    (WRITE . ,(make-instruction ((V) #xF X 5 5)))
-    (READ  . ,(make-instruction ((V) #xF X 6 5)))
-    (CLEAR . ,(make-instruction (() 0 0 #xE 0)))
-    (RET   . ,(make-instruction (() 0 0 #xE #xE)))
-    (CALL  . ,(make-instruction ((N) 2 NNN)))
-    (JUMP  . ,(make-instruction ((N) 1 NNN)))
-    (JUMP0 . ,(make-instruction ((N) #xB NNN)))))
-
-(defparameter +MAX-SIZE+ #x1000)
-(defparameter +START+ #x200)
-(defparameter +OFFSET+ 2)
-(defvar *scope* nil)
-
 (defstruct env
   (output (make-array +MAX-SIZE+ :element-type '(unsigned-byte 8) :fill-pointer 0))
   (pc (+ +START+ +OFFSET+))
   (using-main? t)
   (jump-to-main nil)
   (has-main? nil)
-  (initial-step-only? nil)
   (values (copy-alist +BUILTIN-VALUES+))
   labels
   (macros (copy-alist +BUILTIN-MACROS+)))
@@ -244,7 +176,7 @@
         (parameters (third form))
         (body (cdddr form)))
     (when (assoc name (env-macros env)) (error "Macro already defined ~a" form))
-    (when (assoc name +INSTRUCTIONS+) (error "Cannot redefine instruction: ~a" name))
+    (when (instruction? name) (error "Cannot redefine instruction ~a" name))
     (when (find-if #'special? parameters) (error "Special variables cannot be shadowed"))
     (push (cons name (mk-macro parameters body)) (env-macros env))
     nil))
@@ -255,11 +187,11 @@
     (c8-eval-0 env (macro-body macro))))
 
 (defun c8-apply-0 (env app args)
-  (let ((ins (cdr (assoc app +INSTRUCTIONS+)))
-        (mac (cdr (assoc app (env-macros env))))
+  (let ((mac (cdr (assoc app (env-macros env))))
         (args (c8-eval-args-0 env args)))
-    (cond (ins (incf (env-pc env) 2)
-               (list (list* (if (env-initial-step-only? env) app ins) args)))
+    (cond ((instruction? app)
+           (incf (env-pc env) 2)
+           (list (list* app args)))
           (mac (incf (macro-calls mac))
                (c8-macroexpand-0 env mac (list* (macro-calls mac) args)))
           (t (error "Unknown application (~a) in: ~a ~a" app app args)))))
@@ -393,10 +325,77 @@
   (loop for n in numbers
         collect (logand (truncate (c8-eval-arg-1 env n)) #xFF)))
 
+(defun strip-ins-args (args)
+  (loop for x in (remove-if #'fake? args)
+        collect (if-let (v (v-reg? x)) v x)))
+
+(defun c8-type (exp)
+  (cond ((numberp exp) 'N)
+        ((v-reg? exp) 'V)
+        ((fake? exp) exp)
+        (t nil)))
+
+(defun emit-op (&rest shell)
+  (labels ((append-bytes (nums pos)
+             (if (= 1 (length nums))
+                 (car nums)
+                 (dpb (car nums) (byte pos pos)
+                      (append-bytes (cdr nums) (- pos 4))))))
+    (let ((op (append-bytes shell 12)))
+      (list (chop op 8 8) (chop op 8)))))
+
+(defun c8-eval-ins (name args)
+  (let* ((sargs (strip-ins-args args))
+         (s1 (first sargs))
+         (s2 (second sargs))
+         (s3 (third sargs))
+         (types (mapcar #'c8-type args)))
+    
+    (match (list* name types)
+      ((EQ V V)   (emit-op 9 s1 s2 0))
+      ((EQ V N)   (emit-op 4 s1 s2))
+      ((EQ V KEY) (emit-op #xE s1 #xA 1))
+        
+      ((NEQ V KEY) (emit-op #xE s1 9 #xE))
+      ((NEQ V V)   (emit-op 5 s1 s2 0))
+      ((NEQ V N)   (emit-op 3 s1 s2))
+        
+      ((SET V N)   (emit-op 6 s1 s2))
+      ((SET V V)   (emit-op 8 s1 s2 0))
+      ((SET I N)   (emit-op #xA s1))
+      ((SET V DT)  (emit-op #xF s1 0 7))
+      ((SET DT V)  (emit-op #xF s1 1 5))
+      ((SET V ST)  (emit-op #xF s1 1 8))
+      ((SET I V)   (emit-op #xF s1 2 9)) 
+      ((SET V KEY) (emit-op #xF s1 0 #xA))
+        
+      ((ADD V N) (emit-op 7 s1 s2))
+      ((ADD V V) (emit-op 8 s1 s2 4))
+      ((ADD I V) (emit-op #xF s1 1 #xE))
+        
+      ((OR V V)   (emit-op 8 s1 s2 1))
+      ((AND V V)  (emit-op 8 s1 s2 2))
+      ((XOR V V)  (emit-op 8 s1 s2 3))
+      ((SUB V V)  (emit-op 8 s1 s2 5))
+      ((SHR V V)  (emit-op 8 s1 s2 6))
+      ((SUBN V V) (emit-op 8 s1 s2 7))
+      ((SHL V V)  (emit-op 8 s1 s2 #xE))
+        
+      ((RAND V N)   (emit-op #xC s1 s2))
+      ((DRAW V V N) (emit-op #xD s1 s2 s3))
+      ((BCD V)      (emit-op #xF s1 3 3))
+      ((WRITE V)    (emit-op #xF s1 5 5))
+      ((READ V)     (emit-op #xF s1 6 5))
+      ((CLEAR)      (emit-op 0 0 #xE 0))
+      ((RET)        (emit-op 0 0 #xE #xE))
+      ((CALL N)     (emit-op 2 s1))
+      ((JUMP N)     (emit-op 1 s1))
+      ((JUMP0 N)    (emit-op #xB s1)))))
+
 (defun c8-eval-form-1 (env form)
   (case (first form)
     (include (c8-eval-include-1 env (rest form)))
-    (otherwise (apply (first form) (c8-eval-args-1 env (rest form))))))
+    (otherwise (c8-eval-ins (first form) (c8-eval-args-1 env (rest form))))))
 
 (defun c8-eval-program-1 (env forms)
   (with-slots (output) env
@@ -408,7 +407,7 @@
 
 (defun c8-compile (filename &key (using-main? t) initial-step-only?)
   (let ((parsed (parse filename))
-        (env (make-env :using-main? using-main? :initial-step-only? initial-step-only?)))
+        (env (make-env :using-main? using-main?)))
     (if initial-step-only?
         (c8-eval-program-0 env parsed)
         (c8-eval-program-1 env (c8-eval-program-0 env parsed)))))

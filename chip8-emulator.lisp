@@ -57,18 +57,6 @@
     (set-mem chip :game (c8-compile filename) :font +FONT+)
     chip))
 
-
-(defmacro match (pattern &body clauses)
-  `(cond ,@(dolist (clause clauses clauses)
-             (setf (car clause)
-                   (flet ((ekual (x y) (or (equal x y) (equal x '_))))
-                     (if (listp (car clause))
-                         `(every ,#'ekual ',(car clause) ,pattern)
-                         `(funcall ,#'ekual ',(car clause) ,pattern)))))))
-
-(defun chop (number size &optional (pos 0))
-  (ldb (byte size pos) number))
-
 (defun emulate-cycle (chip8)
   (with-slots (mem v i pc dt st stack sp gfx draw-flag waiting keys) chip8
     (let* ((opcode (dpb (aref mem pc) (byte 8 8) (aref mem (1+ pc))))
