@@ -391,7 +391,8 @@
       ((RET)        (emit-op 0 0 #xE #xE))
       ((CALL N)     (emit-op 2 s1))
       ((JUMP N)     (emit-op 1 s1))
-      ((JUMP0 N)    (emit-op #xB s1)))))
+      ((JUMP0 N)    (emit-op #xB s1))
+      (_ (error "Invalid instruction: ~a ~a" name args)))))
 
 (defun c8-eval-form-1 (env form)
   (case (first form)
