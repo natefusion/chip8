@@ -1,5 +1,6 @@
 (deftype u8  () '(unsigned-byte 8))
 (deftype u16 () '(unsigned-byte 16))
+(deftype u12 () '(unsigned-byte 12))
 
 (defparameter +W+     64)
 (defparameter +H+     32)
@@ -7,21 +8,21 @@
 (defparameter +MEM+   #x1000)
 ;; (defconstant +START+ #x200)
 (defparameter +FONT+ #(#xF0 #x90 #x90 #x90 #xF0   ; 0
-                      #x20 #x60 #x20 #x20 #x70   ; 1
-                      #xF0 #x10 #xF0 #x80 #xF0   ; 2
-                      #xF0 #x10 #xF0 #x10 #xF0   ; 3
-                      #x90 #x90 #xF0 #x10 #x10   ; 4
-                      #xF0 #x80 #xF0 #x10 #xF0   ; 5
-                      #xF0 #x80 #xF0 #x90 #xF0   ; 6
-                      #xF0 #x10 #x20 #x40 #x40   ; 7
-                      #xF0 #x90 #xF0 #x90 #xF0   ; 8
-                      #xF0 #x90 #xF0 #x10 #xF0   ; 9
-                      #xF0 #x90 #xF0 #x90 #x90   ; A
-                      #xE0 #x90 #xE0 #x90 #xE0   ; B
-                      #xF0 #x80 #x80 #x80 #xF0   ; C
-                      #xE0 #x90 #x90 #x90 #xE0   ; D
-                      #xF0 #x80 #xF0 #x80 #xF0   ; E
-                      #xF0 #x80 #xF0 #x80 #x80)) ; F
+                       #x20 #x60 #x20 #x20 #x70   ; 1
+                       #xF0 #x10 #xF0 #x80 #xF0   ; 2
+                       #xF0 #x10 #xF0 #x10 #xF0   ; 3
+                       #x90 #x90 #xF0 #x10 #x10   ; 4
+                       #xF0 #x80 #xF0 #x10 #xF0   ; 5
+                       #xF0 #x80 #xF0 #x90 #xF0   ; 6
+                       #xF0 #x10 #x20 #x40 #x40   ; 7
+                       #xF0 #x90 #xF0 #x90 #xF0   ; 8
+                       #xF0 #x90 #xF0 #x10 #xF0   ; 9
+                       #xF0 #x90 #xF0 #x90 #x90   ; A
+                       #xE0 #x90 #xE0 #x90 #xE0   ; B
+                       #xF0 #x80 #x80 #x80 #xF0   ; C
+                       #xE0 #x90 #x90 #x90 #xE0   ; D
+                       #xF0 #x80 #xF0 #x80 #xF0   ; E
+                       #xF0 #x80 #xF0 #x80 #x80)) ; F
 
 (defun chip8-array (dimensions &key type)
   (make-array dimensions :element-type type))
@@ -41,11 +42,11 @@
 (defstruct chip8
   (mem (chip8-array +MEM+ :type 'u8))
   (v (chip8-array 16 :type 'u8))
-  (i 0 :type u16)
+  (i 0 :type u12)
   (pc +START+ :type u16)
   (dt 0 :type u8)
   (st 0 :type u8)
-  (stack (chip8-array 16 :type 'u16))
+  (stack (chip8-array 16 :type 'u12))
   (sp 0 :type u8)
   (gfx (chip8-array (list +W+ +H+) :type 'u8))
   (draw-flag nil :type boolean)
@@ -67,7 +68,7 @@
            (y      (chop opcode 4 4))
            (w      (chop opcode 4 12)))
       (incf pc 2)
-
+      
       (match (list w x y n)
         ((0 0 #xE #x0) (setf gfx (chip8-array (list +W+ +H+) :type 'u8)))
         ((0 0 #xE #xE) (setf pc (aref stack sp)
@@ -105,8 +106,8 @@
                      (setf (aref v #xF) (if (> diff #xFF) 1 0)
                            (aref v x)   (chop diff 8))))
         
-        ((8 _ _ #xE) (setf (aref v #xF) (ash (aref v x) -7)
-                           (aref v x)   (ash (aref v y) 1)))
+        ((8 _ _ #xE) (setf (aref v #xF) (chop (ash (aref v x) -7) 8)
+                           (aref v x)   (chop (ash (aref v y) 1) 8)))
 
         ((9 _ _ 0) (when (/= (aref v x) (aref v y)) (incf pc 2)))
         
@@ -118,7 +119,7 @@
          (setf draw-flag t)
          (dotimes (py n)
            (dotimes (px 8)
-             (when (logbitp px (aref mem (+ i py)))
+             (when (logbitp (- 8 px) (aref mem (+ i py)))
                (let* ((x-coor (mod (+ px (aref v x)) +W+))
                       (y-coor (mod (+ py (aref v y)) +H+))
                       (pixel (aref gfx x-coor y-coor)))
@@ -137,12 +138,12 @@
         
         ((#xF _ 1 #x5) (setf dt (aref v x)))
         ((#xF _ 1 #x8) (setf st (aref v x)))
-        ((#xF _ 1 #xE) (setf i (chop (+ i (aref v x)) 16)))
-        ((#xF _ 2 #x9) (setf i (chop (* 5 (aref v x)) 16)))
+        ((#xF _ 1 #xE) (setf i (chop (+ i (aref v x)) 12)))
+        ((#xF _ 2 #x9) (setf i (chop (* 5 (aref v x)) 12)))
         
-        ((#xF _ 3 3) (setf (aref mem (+ i 0)) (mod (/ (aref v x) 100) 10)
-                           (aref mem (+ i 1)) (mod (/ (aref v x) 10) 10)
-                           (aref mem (+ i 2)) (mod (/ (aref v x) 1) 10)))
+        ((#xF _ 3 3) (setf (aref mem (+ i 0)) (truncate (mod (/ (aref v x) 100) 10))
+                           (aref mem (+ i 1)) (truncate (mod (/ (aref v x) 10) 10))
+                           (aref mem (+ i 2)) (truncate (mod (/ (aref v x) 1) 10))))
 
         ((#xF _ 5 5) (dotimes (a (1+ x)) (setf (aref mem (+ a i)) (aref v a))))
         ((#xF _ 5 5) (dotimes (a (1+ x)) (setf (aref v a) (aref mem (+ a i)))))
@@ -227,7 +228,7 @@
             do (loop repeat tickrate
                      while (not waiting)
                      do (emulate-cycle chip))
-            do (incf origin frame-time))
+               (incf origin frame-time))
       
       (when draw-flag
         (draw-frame chip)
@@ -239,18 +240,37 @@
 
 (defparameter *extra* 520)
 
-(defun chip8 (game)
+(defun c8-load (filename)
+  (with-open-file (f filename :element-type 'unsigned-byte)
+    (loop for byte = (read-byte f nil)
+          while byte
+          with vec = (make-array +MAX-SIZE+
+                                 :element-type 'unsigned-byte
+                                 :fill-pointer 0)
+          do (if (< (fill-pointer vec) (array-total-size vec))
+                 (vector-push byte vec)
+                 (error "Your program is too big!"))
+          finally (return vec))))
+
+(defun chip8 (&key code binary)
   (let* ((chip (make-chip8))
          (timing (init-timing)))
-    (set-mem chip :game (c8-compile game) :font +FONT+)
-    (raylib:with-window ((+ *extra* (* +SCALE+ +W+)) (* +SCALE+ +H+) (format nil "chip8 emulator | ~A" game))
+    (set-mem chip :game (cond (code (c8-compile code))
+                              (binary (c8-load binary))
+                              (t (error "wowee enter code or binary pls")))
+                  :font +FONT+)
+    (raylib:with-window ((+ *extra* (* +SCALE+ +W+)) (* +SCALE+ +H+) (format nil "chip8 emulator | ~A" (if code code binary)))
       (raylib:set-target-fps 15)
 
       (loop until (raylib:window-should-close)
             do (idle-loop timing chip)))))
-e
+
 (defun main ()
-  (if (= (length *posix-argv*) 2)
-      (chip8 (second *posix-argv*))
-      (print "Please enter a filename")))
+  (let ((command (second *posix-argv*))
+        (filename (third *posix-argv*)))
+    (cond ((string-equal command "--binary")
+           (chip8 :binary filename))
+          ((string-equal command "--code")
+           (chip8 :code filename))
+          (t (print "Malformed input: should be: '--binary filename' or '--code filename'")))))
 

@@ -92,8 +92,8 @@
                        (sub vf x)
                        (neq vf 0))))))
 
-(defparameter +MAX-SIZE+ #x1000)
 (defparameter +START+ #x200)
+(defparameter +MAX-SIZE+ (- #x1000 +START+))
 (defparameter +OFFSET+ 2)
 (defvar *scope* nil)
 
