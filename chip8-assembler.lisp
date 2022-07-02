@@ -39,7 +39,8 @@
              (setf (car clause)
                    (flet ((ekual (x y) (or (equal x y) (equal x '_))))
                      (if (listp (car clause))
-                         `(every ,#'ekual ',(car clause) ,pattern)
+                         `(when (eql (list-length ',(car clause)) (list-length ,pattern))
+                            (every ,#'ekual ',(car clause) ,pattern))
                          `(funcall ,#'ekual ',(car clause) ,pattern)))))))
 
 (defun chop (number size &optional (pos 0))
