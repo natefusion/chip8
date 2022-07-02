@@ -338,7 +338,7 @@
 
 (defun emit-op (&rest shell)
   (labels ((append-bytes (nums pos)
-             (if (= 1 (length nums))
+             (if (<= (length nums) 1)
                  (car nums)
                  (dpb (car nums) (byte pos pos)
                       (append-bytes (cdr nums) (- pos 4))))))
