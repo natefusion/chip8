@@ -39,7 +39,6 @@
             do (setf (aref mem i) (aref game j))))))
 
 (defstruct chip8
-  (opcode 0 :type u16)
   (mem (chip8-array +MEM+ :type 'u8))
   (v (chip8-array 16 :type 'u8))
   (i 0 :type u16)
@@ -49,7 +48,6 @@
   (stack (chip8-array 16 :type 'u16))
   (sp 0 :type u8)
   (gfx (chip8-array (list +W+ +H+) :type 'u8))
-  (draw-flag nil :type boolean)
   (waiting nil :type boolean)
   (keys (chip8-array 16 :type 'bit)))
 
@@ -62,9 +60,9 @@
     chip))
 
 (defun emulate-cycle (chip8)
-  (with-slots (opcode mem v i pc dt st stack sp gfx draw-flag waiting keys) chip8
-    (setf opcode (get-opcode mem pc))
-    (let* ((nnn    (chop opcode 12))
+  (with-slots (opcode mem v i pc dt st stack sp gfx waiting keys) chip8
+    (let* ((opcode (get-opcode mem pc))
+           (nnn    (chop opcode 12))
            (nn     (chop opcode 8))
            (n      (chop opcode 4))
            (x      (chop opcode 4 8))
@@ -118,16 +116,14 @@
         ((#xB _ _ _) (setf pc (+ nnn (aref v 0))))
         ((#xC _ _ _) (setf (aref v x) (logand (random 255) nn)))
         
-        ((#xD _ _ _)
-         (setf draw-flag t)
-         (dotimes (py n)
-           (dotimes (px 8)
-             (when (logbitp (- 8 px) (aref mem (+ i py)))
-               (let* ((x-coor (mod (+ px (aref v x)) +W+))
-                      (y-coor (mod (+ py (aref v y)) +H+))
-                      (pixel (aref gfx x-coor y-coor)))
-                 (setf (aref gfx x-coor y-coor) (if (zerop pixel) 1 0)
-                       (aref v #xF) pixel))))))
+        ((#xD _ _ _) (dotimes (py n)
+                       (dotimes (px 8)
+                         (when (logbitp (- 8 px) (aref mem (+ i py)))
+                           (let* ((x-coor (mod (+ px (aref v x)) +W+))
+                                  (y-coor (mod (+ py (aref v y)) +H+))
+                                  (pixel (aref gfx x-coor y-coor)))
+                             (setf (aref gfx x-coor y-coor) (if (zerop pixel) 1 0)
+                                   (aref v #xF) pixel))))))
         
         ((#xE _ #x9 #xE) (when (= 1 (bit keys (aref v x))) (incf pc 2)))
         ((#xE _ #xA #x1) (when (= 0 (bit keys (aref v x))) (incf pc 2)))
@@ -159,42 +155,44 @@
     (raylib:clear-background raylib:+yellow+)
     
     (with-slots (v gfx i pc dt st opcode mem) chip
-      (let ((vars (list (aref v 0) (aref v 4) (aref v 8) (aref v 12)
-                        (aref v 1) (aref v 5) (aref v 9) (aref v 13)
-                        (aref v 2) (aref v 6) (aref v 10) (aref v 14)
-                        (aref v 3) (aref v 7) (aref v 11) (aref v 15)
-                        i pc dt st
-                        (dump (get-opcode mem (- pc 2)))
-                        (dump opcode)
-                        (dump (get-opcode mem (+ pc 2)))))
-            (line (concatenate 'string
-                               "V0: ~3D, V4: ~3D, V8: ~3D, VC: ~3D~%"
-                               "V1: ~3D, V5: ~3D, V9: ~3D, VD: ~3D~%"
-                               "V2: ~3D, V6: ~3D, VA: ~3D, VE: ~3D~%"
-                               "V3: ~3D, V7: ~3D, VB: ~3D, VF: ~3D~%"
-                               "~%I: ~3D~%PC: ~3D~%DT: ~3D~%ST: ~3D~%"
-                               "~%Instruction:~%"
-                               "Prev: ~A~%"
-                               "Current: ~A~%"
-                               "Next: ~A")))
-        ;; background
-        (raylib:draw-rectangle (+ 0 (* +SCALE+ +W+)) 10 
-                               (- *extra* 10) (- (* +SCALE+ +H+) 25)
-                               raylib:+blue+)
-        ;; shadow long
-        (raylib:draw-rectangle (- (* +SCALE+ +W+) 10) 20
-                               10 (- (* +SCALE+ +H+) 25)
-                               raylib:+black+)
-        ;; shadow wide
-        (raylib:draw-rectangle (+ 0 (* +SCALE+ +W+)) (- (* +SCALE+ +H+) 15)
-                               (- *extra* 20) 10
-                               raylib:+black+)
-        
-        (raylib:draw-text (apply #'format nil line vars)
-                          (+ 5 (* +SCALE+ +W+)) 11
-                          30
-                          raylib:+yellow+))
+      ;; background
+      (raylib:draw-rectangle (+ 0 (* +SCALE+ +W+)) 10 
+                             (- *extra* 10) (- (* +SCALE+ +H+) 25)
+                             raylib:+blue+)
+      ;; shadow long
+      (raylib:draw-rectangle (- (* +SCALE+ +W+) 10) 20
+                             10 (- (* +SCALE+ +H+) 25)
+                             raylib:+black+)
+      ;; shadow wide
+      (raylib:draw-rectangle (+ 0 (* +SCALE+ +W+)) (- (* +SCALE+ +H+) 15)
+                             (- *extra* 20) 10
+                             raylib:+black+)
       
+      (raylib:draw-text
+       (format nil (concatenate
+                    'string
+                    "V0: ~3D, V4: ~3D, V8: ~3D, VC: ~3D~%"
+                    "V1: ~3D, V5: ~3D, V9: ~3D, VD: ~3D~%"
+                    "V2: ~3D, V6: ~3D, VA: ~3D, VE: ~3D~%"
+                    "V3: ~3D, V7: ~3D, VB: ~3D, VF: ~3D~%"
+                    "~%I: ~3D~%PC: ~3D~%DT: ~3D~%ST: ~3D~%"
+                    "~%Instruction:~%"
+                    "Prev: ~A~%"
+                    "Current: ~A~%"
+                    "Next: ~A")
+               (aref v 0) (aref v 4) (aref v 8) (aref v 12)
+               (aref v 1) (aref v 5) (aref v 9) (aref v 13)
+               (aref v 2) (aref v 6) (aref v 10) (aref v 14)
+               (aref v 3) (aref v 7) (aref v 11) (aref v 15)
+               i pc dt st
+               (dump (get-opcode mem (- pc 4))) ; prev
+               (dump (get-opcode mem (- pc 2))) ; current
+               (dump (get-opcode mem pc)))      ; next
+       
+       (+ 5 (* +SCALE+ +W+)) 11
+       30
+       raylib:+yellow+)
+
       (dotimes (x (array-dimension gfx 0))
         (dotimes (y (array-dimension gfx 1))
           (unless (zerop (aref gfx x y))
@@ -227,17 +225,15 @@
     
       (incf last (- (get-internal-real-time) last))
 
-      (with-slots (st dt draw-flag gfx waiting) chip
+      (with-slots (st dt gfx waiting) chip
         (loop repeat 2
               while (< origin (- last frame-time))
               do (loop repeat tickrate
                        while (not waiting)
                        do (emulate-cycle chip))
-                 (incf origin frame-time))
-      
-        (when draw-flag
-          (draw-frame chip)
-          (setf draw-flag nil))
+              (incf origin frame-time))
+
+        (draw-frame chip)
       
         (when (> st 0) (decf st))
         (when (> dt 0) (decf dt)))))
@@ -264,7 +260,7 @@
                               (t (error "wowee enter code or binary pls")))
                   :font +FONT+)
     (raylib:with-window ((+ *extra* (* +SCALE+ +W+)) (* +SCALE+ +H+) (format nil "chip8 emulator | ~A" (if code code binary)))
-      (raylib:set-target-fps 15)
+      (raylib:set-target-fps 30)
       (loop until (raylib:window-should-close)
             ;; GOTCHA: raylib craps itself if with-drawing is not called
             do (if (raylib:is-key-down raylib:+key-p+)
