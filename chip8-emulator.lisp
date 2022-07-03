@@ -118,7 +118,7 @@
         
         ((#xD _ _ _) (dotimes (py n)
                        (dotimes (px 8)
-                         (when (logbitp (- 8 px) (aref mem (+ i py)))
+                         (when (logbitp (- 7 px) (aref mem (+ i py)))
                            (let* ((x-coor (mod (+ px (aref v x)) +W+))
                                   (y-coor (mod (+ py (aref v y)) +H+))
                                   (pixel (aref gfx x-coor y-coor)))
@@ -227,16 +227,16 @@
 
       (with-slots (st dt gfx waiting) chip
         (loop repeat 2
-              while (< origin (- last frame-time))
               do (loop repeat tickrate
-                       while (not waiting)
-                       do (emulate-cycle chip))
-              (incf origin frame-time))
+                       do (emulate-cycle chip)
+                       while (not waiting))
 
-        (draw-frame chip)
-      
-        (when (> st 0) (decf st))
-        (when (> dt 0) (decf dt)))))
+                 (when (> dt 0) (decf dt))
+                 (when (> st 0) (decf st))
+                 (incf origin frame-time)
+              while (< origin (- last frame-time)))
+
+        (draw-frame chip))))
 
 (defparameter *extra* 520)
 
