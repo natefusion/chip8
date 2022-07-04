@@ -115,7 +115,8 @@
   (case exp ((KEY DT ST I) t)))
 
 (defun special? (exp)
-  (or (v-reg? exp) (fake? exp)))
+  (or (v-reg? exp) (fake? exp)
+      (eq exp 'pc)))
 
 (defstruct env
   (output (make-array +MAX-SIZE+ :element-type '(unsigned-byte 8) :fill-pointer 0))
@@ -124,6 +125,7 @@
   (jump-to-main nil)
   (has-main? nil)
   (values (copy-alist +BUILTIN-VALUES+))
+  mutables
   labels
   (macros (copy-alist +BUILTIN-MACROS+)))
 
@@ -136,8 +138,10 @@
   (if (listp arg)
       (list* (first arg) (c8-eval-args-0 env (cdr arg)))
       (let ((val (cdr (assoc arg (env-values env))))
+            (mut (cdr (assoc arg (env-mutables env))))
             (scope (cdr (assoc arg *scope*))))
         (cond (scope scope)
+              (mut mut)
               (val val)
               (t arg)))))
 
@@ -165,15 +169,19 @@
 
 (defun c8-eval-mut-0 (env name value)
   (when (null value) (error "'def ~a' was not initialized" name))
-  (when (or (assoc name (env-labels env))
+  (when (or (assoc name (env-values env))
+            (assoc name (env-labels env))
             (special? name))
     (error "Redefinition of ~a" name))
-  (push (cons name (c8-eval-arg-0 env value)) (env-values env))
+  (if (assoc name (env-mutables env))
+      (setf (cdr (assoc name (env-mutables env))) (c8-eval-arg-0 env value))
+      (push (cons name (c8-eval-arg-0 env value)) (env-mutables env)))
   nil)
 
 (defun c8-eval-def-0 (env name value)
   (when (null value) (error "'def ~a' was not initialized" name))
   (when (or (assoc name (env-values env))
+            (assoc name (env-mutables env))
             (assoc name (env-labels env))
             (special? name))
     (error "Redefinition of ~a" name))
@@ -327,10 +335,10 @@
              (ceil (ceiling x))
              (floor (floor x))
              (otherwise (error "Invalid application: ~a" arg)))))
-        (t (let ((label (cdr (assoc arg (env-labels env))))
-                 (pc (eq arg 'pc)))
+        (t (let ((label (cdr (assoc arg (env-labels env)))))
              (cond (label label)
-                   (pc (+ +START+ (length (env-output env))))
+                   ; must be above 'special?' case
+                   ((eq arg 'pc) (+ +START+ (length (env-output env)))) 
                    ((special? arg) arg)
                    (t (error "Unknown argument: ~a" arg)))))))
 
