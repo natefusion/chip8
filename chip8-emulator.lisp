@@ -60,6 +60,7 @@
     chip))
 
 (defun emulate-cycle (chip8)
+  (set-key chip8)
   (with-slots (opcode mem v i pc dt st stack sp gfx waiting keys) chip8
     (let* ((opcode (get-opcode mem pc))
            (nnn    (chop opcode 12))
@@ -131,8 +132,7 @@
         ((#xF _ 0 7) (setf (aref v x) dt))
         
         ((#xF _ 0 #xA) (if-let (pos (position 1 keys))
-                         (setf (aref v x) pos
-                               waiting nil)
+                         (setf (aref v x) pos)
                          (setf waiting t)))
         
         ((#xF _ 1 #x5) (setf dt (aref v x)))
@@ -185,9 +185,9 @@
                (aref v 2) (aref v 6) (aref v 10) (aref v 14)
                (aref v 3) (aref v 7) (aref v 11) (aref v 15)
                i pc dt st
-               (dump (get-opcode mem (- pc 4))) ; prev
-               (dump (get-opcode mem (- pc 2))) ; current
-               (dump (get-opcode mem pc)))      ; next
+               (dump (get-opcode mem (- pc 2))) ; prev
+               (dump (get-opcode mem pc)) ; current
+               (dump (get-opcode mem (+ pc 2))))      ; next
        
        (+ 5 (* +SCALE+ +W+)) 11
        30
@@ -206,7 +206,10 @@
                          raylib:+key-S+ raylib:+key-D+ raylib:+key-Z+ raylib:+key-C+
                          raylib:+key-four+ raylib:+key-R+ raylib:+key-F+ raylib:+key-V+)
         for index from 0
-        do (setf (bit (chip8-keys chip) index) (if (raylib:is-key-down key) 1 0))))
+        do (setf (bit (chip8-keys chip) index)
+                 (if (raylib:is-key-down key)
+                     (progn (setf (chip8-waiting chip) nil) 1)
+                     0))))
 
 (defstruct timing frame-time tickrate last origin)
 
@@ -217,26 +220,26 @@
     (make-timing :frame-time frame-time
                  :last last
                  :origin origin
-                 :tickrate 20)))
+                 :tickrate 10)))
 
 (defun idle-loop (timing chip)
   (with-slots (frame-time tickrate last origin) timing
-      (set-key chip)
+    (set-key chip)
     
-      (incf last (- (get-internal-real-time) last))
+    (incf last (- (get-internal-real-time) last))
 
-      (with-slots (st dt gfx waiting) chip
-        (loop repeat 2
-              do (loop repeat tickrate
-                       do (emulate-cycle chip)
-                       while (not waiting))
+    (with-slots (st dt gfx waiting) chip
+      (loop repeat 2
+            while (< origin (- last frame-time))
+            do (loop repeat tickrate
+                     while (not waiting)
+                     do (emulate-cycle chip))
 
-                 (when (> dt 0) (decf dt))
-                 (when (> st 0) (decf st))
-                 (incf origin frame-time)
-              while (< origin (- last frame-time)))
+               (when (> dt 0) (decf dt))
+               (when (> st 0) (decf st))
+               (incf origin frame-time)))
 
-        (draw-frame chip))))
+    (draw-frame chip)))
 
 (defparameter *extra* 520)
 
@@ -260,7 +263,7 @@
                               (t (error "wowee enter code or binary pls")))
                   :font +FONT+)
     (raylib:with-window ((+ *extra* (* +SCALE+ +W+)) (* +SCALE+ +H+) (format nil "chip8 emulator | ~A" (if code code binary)))
-      (raylib:set-target-fps 30)
+      (raylib:set-target-fps 60)
       (loop until (raylib:window-should-close)
             ;; GOTCHA: raylib craps itself if with-drawing is not called
             do (if (raylib:is-key-down raylib:+key-p+)
