@@ -73,7 +73,7 @@
 
 (defparameter +BUILTIN-MACROS+
   `((GT . ,(mk-macro '(x y)
-                     '((set vf x)
+                     '((set vf y)
                        (sub vf x)
                        (eq vf 0))))
     
