@@ -160,6 +160,7 @@
 (defun c8-eval-label-0 (env name &optional numbers)
   (when (null name) (error "Label not given a name"))
   (when (or (assoc name (env-labels env))
+            (assoc name (env-mutables env))
             (assoc name (env-values env))
             (special? name))
     (error "Redefinition of ~a" name))
