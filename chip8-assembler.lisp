@@ -293,6 +293,24 @@
   (loop for arg in args
         collect (c8-eval-arg-1 env arg)))
 
+(defun c8-eval-deref-1 (array value)
+  (cond ((< value +START+)
+         (error (concatenate
+                 'string
+                 "Cannot access memory location '~A'~%"
+                 "Memory references cannot be lower than '~A'")
+                value +START+))
+        ((>= value (+ (fill-pointer array) +START+))
+         (error (concatenate
+                 'string
+                 "Cannot access memory location '~A'~%"
+                 "Only memory addresses less than '~A', the value of the program counter~%"
+                 "at the time of evaluation, can be referenced~%"
+                 "~%that's too hard, cut me some slack")
+                value
+                (+ (fill-pointer array) +START+)))
+        (t (aref array (- value +START+)))))
+
 (defmacro bool (expression) `(if ,expression 1 0))
 
 (defun c8-eval-arg-1 (env arg)
@@ -321,7 +339,7 @@
              (>= (bool (>= x y)))
              (= (bool (= x y)))
              (/= (bool (/= x y)))
-             (@  (aref (env-output env) (- x +START+)))
+             (@  (c8-eval-deref-1 (env-output env) x))
              (~  (lognot x))
              (!  (bool (zerop x)))
              (sin (sin x))
@@ -338,25 +356,25 @@
         (t (let ((label (cdr (assoc arg (env-labels env)))))
              (cond (label label)
                    ; must be above 'special?' case
-                   ((eq arg 'pc) (+ +START+ (length (env-output env)))) 
+                   ((eq arg 'pc) (+ +START+ (fill-pointer (env-output env)))) 
                    ((special? arg) arg)
                    (t (error "Unknown argument: ~a" arg)))))))
 
 (defun c8-eval-include-1 (env numbers)
   (loop for n in numbers
-        collect (logand (truncate (c8-eval-arg-1 env n)) #xFF)))
+        collect (chop (truncate (c8-eval-arg-1 env n)) 8)))
 
-(defun strip-ins-args (args)
+(defun strip-ins-args-1 (args)
   (loop for x in (remove-if #'fake? args)
         collect (if-let (v (v-reg? x)) v x)))
 
-(defun c8-type (exp)
+(defun c8-type-1 (exp)
   (cond ((numberp exp) 'N)
         ((v-reg? exp) 'V)
         ((fake? exp) exp)
         (t nil)))
 
-(defun emit-op (&rest shell)
+(defun emit-op-1 (&rest shell)
   (labels ((append-bytes (nums pos)
              (if (<= (length nums) 1)
                  (car nums)
@@ -365,53 +383,53 @@
     (let ((op (append-bytes shell 12)))
       (list (chop op 8 8) (chop op 8)))))
 
-(defun c8-eval-ins (name args)
-  (let* ((sargs (strip-ins-args args))
+(defun c8-eval-ins-1 (name args)
+  (let* ((sargs (strip-ins-args-1 args))
          (nnn (first sargs))  (x   (first sargs))
          (y   (second sargs)) (kk  (second sargs))
          (n   (third sargs))
-         (types (mapcar #'c8-type args)))
+         (types (mapcar #'c8-type-1 args)))
     
     (match (list* name types)
-      ((EQ V V)   (emit-op 9 X Y 0))
-      ((EQ V N)   (emit-op 4 X KK))
-      ((EQ V KEY) (emit-op #xE X #xA 1))
+      ((EQ V V)   (emit-op-1 9 X Y 0))
+      ((EQ V N)   (emit-op-1 4 X KK))
+      ((EQ V KEY) (emit-op-1 #xE X #xA 1))
         
-      ((NEQ V KEY) (emit-op #xE X 9 #xE))
-      ((NEQ V V)   (emit-op 5 X Y 0))
-      ((NEQ V N)   (emit-op 3 X KK))
+      ((NEQ V KEY) (emit-op-1 #xE X 9 #xE))
+      ((NEQ V V)   (emit-op-1 5 X Y 0))
+      ((NEQ V N)   (emit-op-1 3 X KK))
         
-      ((SET V N)   (emit-op 6 X Y))
-      ((SET V V)   (emit-op 8 X Y 0))
-      ((SET I N)   (emit-op #xA NNN))
-      ((SET V DT)  (emit-op #xF X 0 7))
-      ((SET DT V)  (emit-op #xF X 1 5))
-      ((SET V ST)  (emit-op #xF X 1 8))
-      ((SET I V)   (emit-op #xF X 2 9)) 
-      ((SET V KEY) (emit-op #xF X 0 #xA))
+      ((SET V N)   (emit-op-1 6 X Y))
+      ((SET V V)   (emit-op-1 8 X Y 0))
+      ((SET I N)   (emit-op-1 #xA NNN))
+      ((SET V DT)  (emit-op-1 #xF X 0 7))
+      ((SET DT V)  (emit-op-1 #xF X 1 5))
+      ((SET V ST)  (emit-op-1 #xF X 1 8))
+      ((SET I V)   (emit-op-1 #xF X 2 9)) 
+      ((SET V KEY) (emit-op-1 #xF X 0 #xA))
         
-      ((ADD V N) (emit-op 7 X KK))
-      ((ADD V V) (emit-op 8 X Y 4))
-      ((ADD I V) (emit-op #xF X 1 #xE))
+      ((ADD V N) (emit-op-1 7 X KK))
+      ((ADD V V) (emit-op-1 8 X Y 4))
+      ((ADD I V) (emit-op-1 #xF X 1 #xE))
         
-      ((OR V V)   (emit-op 8 X Y 1))
-      ((AND V V)  (emit-op 8 X Y 2))
-      ((XOR V V)  (emit-op 8 X Y 3))
-      ((SUB V V)  (emit-op 8 X Y 5))
-      ((SHR V V)  (emit-op 8 X Y 6))
-      ((SUBN V V) (emit-op 8 X Y 7))
-      ((SHL V V)  (emit-op 8 X Y #xE))
+      ((OR V V)   (emit-op-1 8 X Y 1))
+      ((AND V V)  (emit-op-1 8 X Y 2))
+      ((XOR V V)  (emit-op-1 8 X Y 3))
+      ((SUB V V)  (emit-op-1 8 X Y 5))
+      ((SHR V V)  (emit-op-1 8 X Y 6))
+      ((SUBN V V) (emit-op-1 8 X Y 7))
+      ((SHL V V)  (emit-op-1 8 X Y #xE))
         
-      ((RAND V N)   (emit-op #xC X KK))
-      ((DRAW V V N) (emit-op #xD X Y N))
-      ((BCD V)      (emit-op #xF X 3 3))
-      ((WRITE V)    (emit-op #xF X 5 5))
-      ((READ V)     (emit-op #xF X 6 5))
-      ((CLEAR)      (emit-op 0 0 #xE 0))
-      ((RET)        (emit-op 0 0 #xE #xE))
-      ((CALL N)     (emit-op 2 NNN))
-      ((JUMP N)     (emit-op 1 NNN))
-      ((JUMP0 N)    (emit-op #xB NNN))
+      ((RAND V N)   (emit-op-1 #xC X KK))
+      ((DRAW V V N) (emit-op-1 #xD X Y N))
+      ((BCD V)      (emit-op-1 #xF X 3 3))
+      ((WRITE V)    (emit-op-1 #xF X 5 5))
+      ((READ V)     (emit-op-1 #xF X 6 5))
+      ((CLEAR)      (emit-op-1 0 0 #xE 0))
+      ((RET)        (emit-op-1 0 0 #xE #xE))
+      ((CALL N)     (emit-op-1 2 NNN))
+      ((JUMP N)     (emit-op-1 1 NNN))
+      ((JUMP0 N)    (emit-op-1 #xB NNN))
       (_ (error "Invalid instruction: ~a ~a" name args)))))
 
 (defun c8-eval-form-1 (env form)
