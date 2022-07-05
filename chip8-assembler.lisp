@@ -200,7 +200,7 @@
 
 (defun c8-macroexpand-0 (env macro args)
   ;; TODO: Remove this dynamic variable, I don't like it
-  (let ((*scope* (append (pairlis (macro-parameters macro) args) *scope*)))
+  (let ((*scope* (pairlis (macro-parameters macro) args *scope*)))
     (c8-eval-0 env (macro-body macro))))
 
 (defun c8-apply-0 (env app args)
