@@ -202,7 +202,11 @@
     nil))
 
 (defun c8-eval-let-0 (env form)
-  (loop for x in (second form)
+  (when (oddp (length (second form)))
+    (error "Odd number of items in let form: ~a" (second form)))
+  
+  (loop for x = (second form) then (cddr x)
+        while x
         collect (car x) into keys
         collect (c8-eval-arg-0 env (cadr x)) into data
         finally (return (let ((*scope* (pairlis keys data *scope*)))
@@ -444,7 +448,7 @@
 (defun c8-eval-form-1 (env form)
   (case (first form)
     (include (c8-eval-include-1 env (rest form)))
-    (otherwise (c8-eval-ins (first form) (c8-eval-args-1 env (rest form))))))
+    (otherwise (c8-eval-ins-1 (first form) (c8-eval-args-1 env (rest form))))))
 
 (defun c8-eval-program-1 (env forms)
   (with-slots (output) env
