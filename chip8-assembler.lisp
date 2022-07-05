@@ -131,23 +131,22 @@
 
 (declaim (ftype function c8-eval-arg-0 c8-eval-0 c8-eval-form-0))
 
-(defun c8-eval-args-0 (env args)
-  (loop for arg in args collect (c8-eval-arg-0 env arg)))
-
 (defun c8-eval-arg-0 (env arg)
   (if (listp arg)
-      (list* (first arg) (c8-eval-args-0 env (cdr arg)))
+      (list* (first arg) (loop for a in (rest arg) collect (c8-eval-arg-0 env a)))
       (let ((val (cdr (assoc arg (env-values env))))
             (mut (cdr (assoc arg (env-mutables env))))
             (scope (cdr (assoc arg *scope*))))
         (cond (scope scope)
               (mut mut)
               (val val)
+              ((eq arg 'pc) (env-pc env))
               (t arg)))))
 
 (defun c8-eval-include-0 (env numbers)
-  (incf (env-pc env) (length numbers))
-  (list (list* 'include (c8-eval-args-0 env numbers))))
+  (list (list* 'include (loop for n in numbers
+                              collect (c8-eval-arg-0 env n)
+                              do (incf (env-pc env))))))
 
 (defun c8-check-main-0 (env name)
   (with-slots (pc using-main? jump-to-main has-main?) env
@@ -170,13 +169,16 @@
 
 (defun c8-eval-mut-0 (env name value)
   (when (null value) (error "'def ~a' was not initialized" name))
-  (when (or (assoc name (env-values env))
-            (assoc name (env-labels env))
-            (special? name))
-    (error "Redefinition of ~a" name))
-  (if (assoc name (env-mutables env))
-      (setf (cdr (assoc name (env-mutables env))) (c8-eval-arg-0 env value))
-      (push (cons name (c8-eval-arg-0 env value)) (env-mutables env)))
+  (unless (assoc name *scope*)
+    (when (or (assoc name (env-values env))
+              (assoc name (env-labels env))
+              (special? name))
+      (error "Redefinition of ~a" name)))
+  (cond ((assoc name *scope*)
+         (setf (cdr (assoc name *scope*)) (c8-eval-arg-0 env value)))
+        ((assoc name (env-mutables env))
+         (setf (cdr (assoc name (env-mutables env))) (c8-eval-arg-0 env value)))
+        (t (push (cons name (c8-eval-arg-0 env value)) (env-mutables env))))
   nil)
 
 (defun c8-eval-def-0 (env name value)
@@ -199,6 +201,13 @@
     (push (cons name (mk-macro parameters body)) (env-macros env))
     nil))
 
+(defun c8-eval-let-0 (env form)
+  (loop for x in (second form)
+        collect (car x) into keys
+        collect (c8-eval-arg-0 env (cadr x)) into data
+        finally (return (let ((*scope* (pairlis keys data *scope*)))
+                          (c8-eval-0 env (cddr form))))))
+
 (defun c8-macroexpand-0 (env macro args)
   ;; TODO: Remove this dynamic variable, I don't like it
   (let ((*scope* (pairlis (macro-parameters macro) args *scope*)))
@@ -207,7 +216,7 @@
 (defun c8-apply-0 (env app args)
   (let ((scope (cdr (assoc app *scope*)))
         (mac (cdr (assoc app (env-macros env))))
-        (args (c8-eval-args-0 env args)))
+        (args (loop for arg in args collect (c8-eval-arg-0 env arg))))
     (cond (scope (c8-eval-form-0 env (list* scope args)))
           ((instruction? app)
            (incf (env-pc env) 2)
@@ -278,6 +287,7 @@
         (loop (c8-eval-loop-0 env (rest form)))
         (include (c8-eval-include-0 env (rest form)))
         (macro (c8-eval-macro-0 env form))
+        (let (c8-eval-let-0 env form))
         (otherwise (c8-apply-0 env (first form) (rest form))))
       (error "'~a' is not a valid form" form)))
 
@@ -356,8 +366,6 @@
              (otherwise (error "Invalid application: ~a" arg)))))
         (t (let ((label (cdr (assoc arg (env-labels env)))))
              (cond (label label)
-                   ; must be above 'special?' case
-                   ((eq arg 'pc) (+ +START+ (fill-pointer (env-output env)))) 
                    ((special? arg) arg)
                    (t (error "Unknown argument: ~a" arg)))))))
 
