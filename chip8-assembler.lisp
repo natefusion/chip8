@@ -239,38 +239,40 @@
   (append (c8-eval-0 env body)
           (unless (eq name 'main) (c8-eval-form-0 env '(ret)))))
 
-(defun c8-eval-if-0 (env test then else)
-  (cond ((eq (first then) 'then)
-         (setf test (copy-list test)    ; as to not modify the original data. :(((((
-               (first test)
-               (case (first test)
-                 (eq 'neq)
-                 (neq 'eq)
-                 (gt 'le)
-                 (ge 'lt)
-                 (lt 'ge)
-                 (le 'gt)
-                 (t (error "Test for if statement must be eq, neq, gt, ge, lt, le"))))
+(defun c8-eval-if-0 (env form)
+  (cond ((equal (fifth form) '(then))
+         (let ((test (case (second form)
+                       (eq 'neq) (neq 'eq) (gt 'le) (ge 'lt) (lt 'ge) (le 'gt)
+                       (t (error "Test for if statement must be eq, neq, gt, ge, lt, le"))))
+               then else jump-end jump-else)
+           
+           (if-let (else-pos (position '(else) form :test #'equal))
+             (setf then (nthcdr 5 (butlast form (- (length form) else-pos)))
+                   else (nthcdr (1+ else-pos) form))
+             (setf then (nthcdr 5 form)))
 
-         (let (jump-else jump-end)
-           ;; Evaluate the jump instructions before anything else
-           ;; this will ensure the program counter is correct
-           (setf test (c8-eval-form-0 env test)
-                 jump-else (c8-eval-form-0 env '(jump 0))
-                 then (c8-eval-0 env (rest then))
-                 (cadar jump-else) (env-pc env))
-             
+           ;; then block
+           (setf test (c8-eval-form-0 env (list test (third form) (fourth form))))
+           (incf (env-pc env) 2)        ; first jump here
+           (setf then (c8-eval-0 env then)
+                 jump-else `((JUMP ,(env-pc env))))
+
+           ;; else block
            (when else
-             (setf jump-end (c8-eval-form-0 env '(jump 0))
-                   (cadar jump-else) (env-pc env)
-                   else (c8-eval-0 env (rest else))
-                   (cadar jump-end) (env-pc env)))
-             
+             (incf (env-pc env) 2)      ; second jump here
+             (setf jump-else `((JUMP ,(env-pc env)))
+                   else (c8-eval-0 env else)
+                   jump-end `((JUMP ,(env-pc env)))))
+
            (append test jump-else then jump-end else)))
-  
-        (t (let* ((test (c8-eval-form-0 env test))
-                  (then (c8-eval-form-0 env then))
-                  (else (when else (c8-eval-form-0 env else)))
+        
+        (t (case (second form)
+             ((eq neq gt ge lt le))
+             (t (error "Test for if statement must be eq, neq, gt, ge, lt, le")))
+           
+           (let* ((test (c8-eval-form-0 env (list (second form) (third form) (fourth form))))
+                  (then (c8-eval-form-0 env (fifth form)))
+                  (else (when (sixth form) (c8-eval-form-0 env (sixth form))))
                   (statement (append test then else)))
 
              (when (> (length statement) 3)
@@ -291,7 +293,7 @@
         (mut (c8-eval-mut-0 env (second form) (third form)))
         (def (c8-eval-def-0 env (second form) (third form)))
         (proc (c8-eval-proc-0 env (second form) (cddr form)))
-        (if (c8-eval-if-0 env (second form) (third form) (fourth form)))
+        (if (c8-eval-if-0 env form))
         (\: (c8-eval-label-0 env (cadr form) (cddr form)))
         (loop (c8-eval-loop-0 env (rest form)))
         (include (c8-eval-include-0 env (rest form)))

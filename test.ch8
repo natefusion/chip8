@@ -1,112 +1,74 @@
-; TIME TO ACTUALLY DEFINE THE GRAMMER
-; instructions and macros must be on their own line
-; arguments for instructions or macros must be user defined variables,
-; number literals, built-in variables, or labels
+def px v1
+def py v2
 
-; "break" will end a loop
+: up
+  #x70
+  #x70
+  #x20
+  #x70
+  #xA8
+  #x20
+  #x50
+  #x50
+       
+: down #x50 #x50 #x20 #xA8 #x70 #x20 #x70 #x70
 
-def LINE_COUNT ( + ( + 3 2 ) 5 )
-def FILL_COUNT 5
+proc if-w-pressed
+  set i up
+  add py #xFF
+end
 
-def x       v0
-def y       v1
-def px      v2
-def py      v3
-def dx      v4
-def dy      v5
-def counter v6
-def one v7
+[proc if-s-pressed
+  set i down
+  add py 1]
+  
+[macro if-a-pressed (X)
+  set i up
+  add px X]
 
-lab main
-  set i point
+; this is a comment
+[proc main
+  rand px #b0011111
+  rand py #b0001111
+  set i up  
+  draw px py 8
 
-  ( loop 
-    set counter LINE_COUNT
+  loop
+    draw px py 8
 
-    ( loop
-      call somewhere
-      call h-line
-      call somewhere
-      call v-line
-      sub counter one
+    set v0 KEY-W , eq v0 key
+    call if-w-pressed
 
-      neq counter 0
-    )
+    [set v0 KEY-S]
+    [if (eq v0 key)
+      call if-s-pressed]
 
-    set counter FILL_COUNT
+    set v0 KEY-A
+    if (eq v0 key)
+    then
+      if-a-pressed #xFF
+    end      
+    
+    [if (eq v0 key)
+      [then
+        if-a-pressed #xFF]]
 
-    ( loop
-      call somewhere
-      call fill
-      sub counter one
+    set v0 KEY-D
+    eq v0 key , call if-d-pressed
 
-      neq counter 0
-    )
+    draw px py 8
 
-    set v0 key
-    clear
-  )
+    loop
+      set ve dt
+      neq ve 0
+    end
 
+    set ve 3
+    set dt ve
+  end
+end
 
-lab somewhere
-  rand x #xFF
-  rand y #xFF
-ret
-
-lab scan
-  ( loop
-    draw px py 1
-
-    neq vf 0
-      break
-      
-    add px dx
-    add py dy
-  )
-
-  draw px py 1
-ret
-
-
-lab v-line
-  set px x
-  set dx 0
-
-  set py y
-  set dy #xFF
-  call scan
-
-  set py y
-  set dy 1
-  add py dy
-  call scan
-ret
-
-lab h-line
-  set py y
-  set dy 0
-
-  set px x
-  set dx #xFF
-  call scan
-
-  set px y
-  set dx 1
-  add px dx
-  call scan
-ret
-
-lab fill
-  ( loop
-    call h-line
-    add y 1
-    draw x y 1
-
-    eq vf 0
-  )
-
-  draw x y 1
-ret
-
-lab point
-  include #x80
+[proc if-d-pressed
+  set i up
+  add px 1]
+  
