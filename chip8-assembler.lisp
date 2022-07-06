@@ -225,8 +225,8 @@
           ((instruction? app)
            (incf (env-pc env) 2)
            (list (list* app args)))
-          (mac (incf (macro-calls mac))
-               (c8-macroexpand-0 env mac (list* (macro-calls mac) args)))
+          (mac (prog1 (c8-macroexpand-0 env mac (list* (macro-calls mac) args))
+                 (incf (macro-calls mac))))
           (t (error "Unknown application (~a) in: ~a ~a" app app args)))))
 
 (defun c8-eval-loop-0 (env body)
@@ -241,7 +241,8 @@
 
 (defun c8-eval-if-0 (env test then else)
   (cond ((eq (first then) 'then)
-         (setf (first test)
+         (setf test (copy-list test)    ; as to not modify the original data. :(((((
+               (first test)
                (case (first test)
                  (eq 'neq)
                  (neq 'eq)
@@ -249,20 +250,24 @@
                  (ge 'lt)
                  (lt 'ge)
                  (le 'gt)
-                 (otherwise (error "Test for if statement must be eq, neq, gt, ge, lt, le"))))
+                 (t (error "Test for if statement must be eq, neq, gt, ge, lt, le"))))
 
-         ;; Evaluate the jump instructions before anything else
-         ;; this will ensure the program counter is correct
-         (let ((jump-else (c8-eval-form-0 env '(jump 0)))
-               (jump-end  (when else (c8-eval-form-0 env '(jump 0)))))
-
+         (let (jump-else jump-end)
+           ;; Evaluate the jump instructions before anything else
+           ;; this will ensure the program counter is correct
            (setf test (c8-eval-form-0 env test)
+                 jump-else (c8-eval-form-0 env '(jump 0))
                  then (c8-eval-0 env (rest then))
-                 (cadar jump-else) (env-pc env)
-                 else (c8-eval-0 env (rest else)))
-           (when jump-end (setf (cadar jump-end) (env-pc env)))
+                 (cadar jump-else) (env-pc env))
+             
+           (when else
+             (setf jump-end (c8-eval-form-0 env '(jump 0))
+                   (cadar jump-else) (env-pc env)
+                   else (c8-eval-0 env (rest else))
+                   (cadar jump-end) (env-pc env)))
+             
            (append test jump-else then jump-end else)))
-        
+  
         (t (let* ((test (c8-eval-form-0 env test))
                   (then (c8-eval-form-0 env then))
                   (else (when else (c8-eval-form-0 env else)))
