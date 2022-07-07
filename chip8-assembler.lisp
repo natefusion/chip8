@@ -95,7 +95,6 @@
 (defparameter +START+ #x200)
 (defparameter +MAX-SIZE+ (- #x1000 +START+))
 (defparameter +OFFSET+ 2)
-(defvar *scope* nil)
 
 (defun instruction? (exp)
   (case exp
@@ -131,20 +130,27 @@
   (using-main? t)
   (jump-to-main nil)
   (has-main? nil)
+  (local-values (list))
   (values (copy-alist +BUILTIN-VALUES+))
   mutables
   labels
+  (local-macros (list))
   (macros (copy-alist +BUILTIN-MACROS+)))
+
+(defun assoc-local (item alists)
+  (loop for scope in alists
+        for x = (assoc item scope)
+        when x return x))
 
 (declaim (ftype function c8-eval-arg-0 c8-eval-0 c8-eval-form-0))
 
 (defun c8-eval-arg-0 (env arg)
   (if (listp arg)
       (list* (first arg) (loop for a in (rest arg) collect (c8-eval-arg-0 env a)))
-      (let ((val (cdr (assoc arg (env-values env))))
-            (mut (cdr (assoc arg (env-mutables env))))
-            (scope (cdr (assoc arg *scope*))))
-        (cond (scope scope)
+      (let ((local (cdr (assoc-local arg (env-local-values env))))
+            (val (cdr (assoc arg (env-values env))))
+            (mut (cdr (assoc arg (env-mutables env)))))
+        (cond (local local)
               (mut mut)
               (val val)
               ((eq arg 'pc) (env-pc env))
@@ -176,16 +182,15 @@
 
 (defun c8-eval-mut-0 (env name value)
   (when (null value) (error "'def ~a' was not initialized" name))
-  (unless (assoc name *scope*)
-    (when (or (assoc name (env-values env))
-              (assoc name (env-labels env))
-              (special-val? name))
-      (error "Redefinition of ~a" name)))
-  (cond ((assoc name *scope*)
-         (setf (cdr (assoc name *scope*)) (c8-eval-arg-0 env value)))
-        ((assoc name (env-mutables env))
-         (setf (cdr (assoc name (env-mutables env))) (c8-eval-arg-0 env value)))
-        (t (push (cons name (c8-eval-arg-0 env value)) (env-mutables env))))
+  (when (or (assoc-local name (env-local-values env))
+            (assoc name (env-values env))
+            (assoc name (env-labels env))
+            (special-val? name))
+    (error "Redefinition of ~a" name))
+  
+  (if (assoc name (env-mutables env))
+      (setf (cdr (assoc name (env-mutables env))) (c8-eval-arg-0 env value))
+      (push (cons name (c8-eval-arg-0 env value)) (env-mutables env)))
   nil)
 
 (defun c8-eval-def-0 (env name value)
@@ -211,27 +216,34 @@
 (defun c8-eval-let-0 (env form)
   (when (oddp (length (second form)))
     (error "Odd number of items in let form: ~a" (second form)))
-  
   (loop for x = (second form) then (cddr x)
         while x
         collect (car x) into keys
         collect (c8-eval-arg-0 env (cadr x)) into data
-        finally (return (let ((*scope* (pairlis keys data *scope*)))
-                          (c8-eval-0 env (cddr form))))))
+        finally (push (pairlis keys data) (env-local-values env))
+                (return (prog1 (c8-eval-0 env (cddr form))
+                          (pop (env-local-values env))))))
 
 (defun c8-macroexpand-0 (env macro args)
-  ;; TODO: Remove this dynamic variable, I don't like it
-  (let ((*scope* (pairlis (macro-parameters macro) args *scope*)))
-    (c8-eval-0 env (macro-body macro))))
+  (loop for key in (macro-parameters macro)
+        for datum in args
+        if (listp key)
+          collect (cons (first key) datum) into local-macros
+        else
+          collect (cons key (c8-eval-arg-0 env datum)) into local-values
+        finally (push local-macros (env-local-macros env))
+                (push local-values (env-local-values env))
+                (return (prog1 (c8-eval-0 env (macro-body macro))
+                          (pop (env-local-macros env))
+                          (pop (env-local-values env))))))
 
 (defun c8-apply-0 (env app args)
-  (let ((scope (cdr (assoc app *scope*)))
-        (mac (cdr (assoc app (env-macros env))))
-        (args (loop for arg in args collect (c8-eval-arg-0 env arg))))
-    (cond (scope (c8-eval-form-0 env (list* scope args)))
+  (let ((local (cdr (assoc-local app (env-local-macros env))))
+        (mac (cdr (assoc app (env-macros env)))))
+    (cond (local (c8-eval-form-0 env (list* local args)))
           ((instruction? app)
            (incf (env-pc env) 2)
-           (list (list* app args)))
+           (list (list* app (loop for arg in args collect (c8-eval-arg-0 env arg)))))
           (mac (prog1 (c8-macroexpand-0 env mac (list* (macro-calls mac) args))
                  (incf (macro-calls mac))))
           (t (error "Unknown application (~a) in: ~a ~a" app app args)))))
