@@ -277,13 +277,9 @@
           (has-main? forms)
           (t (error "Could not find main label")))))
 
-(defun c8-jump-later-0 (env what)
-  (incf (env-pc env) 2)
-  `((,what ,(env-pc env))))
-
 (defun c8-eval-while-0 (env test)
   (append (c8-eval-form-0 env (list (flip-test (first test)) (second test) (third test)))
-          (c8-jump-later-0 env 'while)))
+          '((while))))
 
 (defun c8-eval-form-0 (env form)
   (if (listp form)
@@ -298,8 +294,8 @@
         (include (c8-eval-include-0 env (rest form)))
         (macro (c8-eval-macro-0 env form))
         (let (c8-eval-let-0 env form))
-        (then (c8-jump-later-0 env 'then))
-        (else (c8-jump-later-0 env 'else))
+        (then (incf (env-pc env) 2) '((then)))
+        (else (incf (env-pc env) 2) `((else ,(env-pc env))))
         (while (c8-eval-while-0 env (rest form)))
         (otherwise (c8-apply-0 env (first form) (rest form))))
       (error "'~a' is not a valid form" form)))
