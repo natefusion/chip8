@@ -104,6 +104,13 @@
          READ CLEAR RET CALL JUMP JUMP0)
      t)))
 
+(defun builtin-func? (exp)
+  (case exp
+    ((mut def proc if then else \: loop while include macro let) t)))
+
+(defun special-func? (exp)
+  (or (instruction? exp) (builtin-func? exp)))
+
 (defun v-reg? (exp)
   (case exp
     (v0 0) (v1 1) (v2 2) (v3 3)
@@ -114,7 +121,7 @@
 (defun fake? (exp)
   (case exp ((KEY DT ST I) t)))
 
-(defun special? (exp)
+(defun special-val? (exp)
   (or (v-reg? exp) (fake? exp)
       (eq exp 'pc)))
 
@@ -161,7 +168,7 @@
   (when (or (assoc name (env-labels env))
             (assoc name (env-mutables env))
             (assoc name (env-values env))
-            (special? name))
+            (special-val? name))
     (error "Redefinition of ~a" name))
   (c8-check-main-0 env name)
   (push (cons name (env-pc env)) (env-labels env))
@@ -172,7 +179,7 @@
   (unless (assoc name *scope*)
     (when (or (assoc name (env-values env))
               (assoc name (env-labels env))
-              (special? name))
+              (special-val? name))
       (error "Redefinition of ~a" name)))
   (cond ((assoc name *scope*)
          (setf (cdr (assoc name *scope*)) (c8-eval-arg-0 env value)))
@@ -186,7 +193,7 @@
   (when (or (assoc name (env-values env))
             (assoc name (env-mutables env))
             (assoc name (env-labels env))
-            (special? name))
+            (special-val? name))
     (error "Redefinition of ~a" name))
   (push (cons name (c8-eval-arg-0 env value)) (env-values env))
   nil)
@@ -196,8 +203,8 @@
         (parameters (third form))
         (body (cdddr form)))
     (when (assoc name (env-macros env)) (error "Macro already defined ~a" form))
-    (when (instruction? name) (error "Cannot redefine instruction ~a" name))
-    (when (find-if #'special? parameters) (error "Special variables cannot be shadowed"))
+    (when (special-func? name) (error "Cannot redefine special func ~a" name))
+    (when (find-if #'special-val? parameters) (error "Special variables cannot be shadowed"))
     (push (cons name (mk-macro parameters body)) (env-macros env))
     nil))
 
@@ -229,21 +236,31 @@
                  (incf (macro-calls mac))))
           (t (error "Unknown application (~a) in: ~a ~a" app app args)))))
 
-(defun c8-eval-loop-0 (env body)
-  (let* ((pc (env-pc env))
-         (lp (c8-eval-0 env body)))
-    (append lp (c8-eval-form-0 env `(JUMP, pc)))))
+(defun flip-test (test)
+  (case test
+    (eq 'neq) (neq 'eq) (gt 'le) (ge 'lt) (lt 'ge) (le 'gt)
+    (t (error "Test must be eq, neq, gt, ge, lt, le"))))
 
-(defun c8-eval-proc-0 (env name body)
-  (c8-eval-label-0 env name)
-  (append (c8-eval-0 env body)
-          (unless (eq name 'main) (c8-eval-form-0 env '(ret)))))
+(defun c8-eval-loop-0 (env body)
+  ;; ugleh
+  (loop for form in body
+        with jump-end and test
+        with jump-begin = (c8-eval-form-0 env `(JUMP ,(env-pc env)))
+
+        if (when (listp form) (eq (first form) 'while))
+          do (setf test     (list (flip-test (second form)) (third form) (fourth form))
+                   jump-end (c8-eval-form-0 env '(JUMP 0)))
+          and append (c8-eval-form-0 env test) into loop-body
+          and append jump-end into loop-body
+        else
+          append (c8-eval-form-0 env form) into loop-body
+        
+        finally (progn (unless (null jump-end) (setf (cadar jump-end) (env-pc env)))
+                       (return (append loop-body jump-begin)))))
 
 (defun c8-eval-if-0 (env form)
   (cond ((equal (fifth form) '(then))
-         (let ((test (case (second form)
-                       (eq 'neq) (neq 'eq) (gt 'le) (ge 'lt) (lt 'ge) (le 'gt)
-                       (t (error "Test for if statement must be eq, neq, gt, ge, lt, le"))))
+         (let ((test (flip-test (second form)))
                then else jump-end jump-else)
            
            (if-let (else-pos (position '(else) form :test #'equal))
@@ -266,10 +283,7 @@
 
            (append test jump-else then jump-end else)))
         
-        (t (case (second form)
-             ((eq neq gt ge lt le))
-             (t (error "Test for if statement must be eq, neq, gt, ge, lt, le")))
-           
+        (t (flip-test (second form))    ; just checks test here, no flipping
            (let* ((test (c8-eval-form-0 env (list (second form) (third form) (fourth form))))
                   (then (c8-eval-form-0 env (fifth form)))
                   (else (when (sixth form) (c8-eval-form-0 env (sixth form))))
@@ -278,6 +292,11 @@
              (when (> (length statement) 3)
                (error "If statements w/out then/else can only have two instructions. Here is yours: ~& (if ~a ~a ~a)" test then else))
              statement))))
+
+(defun c8-eval-proc-0 (env name body)
+  (c8-eval-label-0 env name)
+  (append (c8-eval-0 env body)
+          (unless (eq name 'main) (c8-eval-form-0 env '(ret)))))
 
 (defun c8-insert-main-0 (env forms)
   (with-slots (using-main? jump-to-main has-main?) env
@@ -377,7 +396,7 @@
              (otherwise (error "Invalid application: ~a" arg)))))
         (t (let ((label (cdr (assoc arg (env-labels env)))))
              (cond (label label)
-                   ((special? arg) arg)
+                   ((special-val? arg) arg)
                    (t (error "Unknown argument: ~a" arg)))))))
 
 (defun c8-eval-include-1 (env numbers)
