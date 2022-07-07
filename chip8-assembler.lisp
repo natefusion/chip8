@@ -242,56 +242,28 @@
     (t (error "Test must be eq, neq, gt, ge, lt, le"))))
 
 (defun c8-eval-loop-0 (env body)
-  ;; ugleh
-  (loop for form in body
-        with jump-end and test
-        with jump-begin = (c8-eval-form-0 env `(JUMP ,(env-pc env)))
-
-        if (when (listp form) (eq (first form) 'while))
-          do (setf test     (list (flip-test (second form)) (third form) (fourth form))
-                   jump-end (c8-eval-form-0 env '(JUMP 0)))
-          and append (c8-eval-form-0 env test) into loop-body
-          and append jump-end into loop-body
-        else
-          append (c8-eval-form-0 env form) into loop-body
-        
-        finally (progn (unless (null jump-end) (setf (cadar jump-end) (env-pc env)))
-                       (return (append loop-body jump-begin)))))
+  (let* ((pc (env-pc env))
+         (lp (append (c8-eval-0 env body)
+                     (c8-eval-form-0 env `(JUMP ,pc)))))
+    (mapcar (lambda (form)
+              (case (first form)
+                (while `(JUMP ,(env-pc env)))
+                (t form)))
+            lp)))
 
 (defun c8-eval-if-0 (env form)
-  (cond ((equal (fifth form) '(then))
-         (let ((test (flip-test (second form)))
-               then else jump-end jump-else)
-           
-           (if-let (else-pos (position '(else) form :test #'equal))
-             (setf then (nthcdr 5 (butlast form (- (length form) else-pos)))
-                   else (nthcdr (1+ else-pos) form))
-             (setf then (nthcdr 5 form)))
-
-           ;; then block
-           (setf test (c8-eval-form-0 env (list test (third form) (fourth form))))
-           (incf (env-pc env) 2)        ; first jump here
-           (setf then (c8-eval-0 env then)
-                 jump-else `((JUMP ,(env-pc env))))
-
-           ;; else block
-           (when else
-             (incf (env-pc env) 2)      ; second jump here
-             (setf jump-else `((JUMP ,(env-pc env)))
-                   else (c8-eval-0 env else)
-                   jump-end `((JUMP ,(env-pc env)))))
-
-           (append test jump-else then jump-end else)))
-        
-        (t (flip-test (second form))    ; just checks test here, no flipping
-           (let* ((test (c8-eval-form-0 env (list (second form) (third form) (fourth form))))
-                  (then (c8-eval-form-0 env (fifth form)))
-                  (else (when (sixth form) (c8-eval-form-0 env (sixth form))))
-                  (statement (append test then else)))
-
-             (when (> (length statement) 3)
-               (error "If statements w/out then/else can only have two instructions. Here is yours: ~& (if ~a ~a ~a)" test then else))
-             statement))))
+  (let* ((test (list (if (equal (fifth form) 'test)
+                         (flip-test (second form)) (second form))
+                     (third form) (fourth form))) 
+         (body (c8-eval-0 env (list* test (nthcdr 4 form))))
+         (else-pc (second (find 'else body :key #'car))))
+    
+    (mapcar (lambda (form)
+              (case (first form)
+                (then (if else-pc `(JUMP ,else-pc) `(JUMP ,(env-pc env))))
+                (else `(JUMP ,(env-pc env)))
+                (t form)))
+            body)))
 
 (defun c8-eval-proc-0 (env name body)
   (c8-eval-label-0 env name)
@@ -304,6 +276,14 @@
           (jump-to-main (append (c8-eval-form-0 env `(JUMP ,jump-to-main)) forms))
           (has-main? forms)
           (t (error "Could not find main label")))))
+
+(defun c8-jump-later-0 (env what)
+  (incf (env-pc env) 2)
+  `((,what ,(env-pc env))))
+
+(defun c8-eval-while-0 (env test)
+  (append (c8-eval-form-0 env (list (flip-test (first test)) (second test) (third test)))
+          (c8-jump-later-0 env 'while)))
 
 (defun c8-eval-form-0 (env form)
   (if (listp form)
@@ -318,6 +298,9 @@
         (include (c8-eval-include-0 env (rest form)))
         (macro (c8-eval-macro-0 env form))
         (let (c8-eval-let-0 env form))
+        (then (c8-jump-later-0 env 'then))
+        (else (c8-jump-later-0 env 'else))
+        (while (c8-eval-while-0 env (rest form)))
         (otherwise (c8-apply-0 env (first form) (rest form))))
       (error "'~a' is not a valid form" form)))
 
