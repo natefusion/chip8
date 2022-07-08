@@ -121,7 +121,7 @@
     (vc #xc) (vd #xd) (ve #xe) (vf #xf)))
 
 (defun fake? (exp)
-  (case exp ((KEY DT ST I BIG RAND) t)))
+  (case exp ((KEY DT ST I HEX BIGHEX LONG RAND) t)))
 
 (defun special-val? (exp)
   (or (v-reg? exp) (fake? exp)
@@ -248,7 +248,7 @@
         (mac (cdr (assoc app (env-macros env)))))
     (cond (local (c8-eval-form-0 env (list* local args)))
           ((instruction? app)
-           (incf (env-pc env) 2)
+           (incf (env-pc env) (if (find 'long (list* app args)) 4 2))
            (list (list* app (loop for arg in args collect (c8-eval-arg-0 env arg)))))
           (mac (prog2 (when (eq app (first (env-context env)))
                         (error "Tried to call ~a in context ~a. Recursion is not allowed"
@@ -439,7 +439,7 @@
     ((SET V DT)  (emit-op-1 #xF X 0 7))
     ((SET DT V)  (emit-op-1 #xF X 1 5))
     ((SET V ST)  (emit-op-1 #xF X 1 8))
-    ((SET I V)   (emit-op-1 #xF X 2 9)) 
+    ((SET I HEX V) (emit-op-1 #xF X 2 9)) 
     ((SET V KEY) (emit-op-1 #xF X 0 #xA))
     
     ((ADD V N) (emit-op-1 7 X NN))
@@ -480,7 +480,7 @@
     ((SCROLL-DOWN N) (emit-op-1 0 0 #xC X))
     ((SCROLL-RIGHT) (emit-op-1 0 0 #xF #xB))
     ((SCROLL-LEFT) (emit-op-1 0 0 #xF #xC))
-    ((SET I BIG V) (emit-op-1 #xF X 3 0))
+    ((SET I BIGHEX V) (emit-op-1 #xF X 3 0))
     (_ (c8-chip8-ins-set instruction x y n nn nnn))))
 
 (defun c8-xo-chip-ins-set (instruction x y n nn nnn nnnn)
@@ -489,7 +489,7 @@
     ((SCROLL-UP N) (emit-op-1 0 0 #xD N))
     ((WRITE V V) (emit-op-1 5 X Y 2))
     ((READ V V) (emit-op-1 5 X Y 3))
-    ((SET I BIG N) (emit-op-1 #xF 0 0 0 NNNN))
+    ((SET I LONG N) (emit-op-1 #xF 0 0 0 NNNN))
     ((PLANE N) (emit-op-1 #xF X 0 1))
     ((AUDIO) (emit-op-1 #xF 0 0 2))
     ((SET PITCH V) (emit-op-1 #xF X 3 #xA))
