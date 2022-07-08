@@ -93,7 +93,7 @@
                        (neq vf 0))))))
 
 (defparameter +START+ #x200)
-(defparameter +MAX-SIZE+ (- #x1000 +START+))
+(defparameter +MAX-SIZE+ (- #x10000 +START+))
 (defparameter +OFFSET+ 2)
 
 (defun instruction? (exp)
@@ -484,7 +484,6 @@
     (_ (c8-chip8-ins-set instruction x y n nn nnn))))
 
 (defun c8-xo-chip-ins-set (instruction x y n nn nnn nnnn)
-  ;; xo-chip has 64kb of memory, make sure it is implemented
   (match instruction
     ((SCROLL-UP N) (emit-op-1 0 0 #xD N))
     ((WRITE V V) (emit-op-1 5 X Y 2))
@@ -515,12 +514,15 @@
     (otherwise (c8-eval-ins-1 env (first form) (c8-eval-args-1 env (rest form))))))
 
 (defun c8-eval-program-1 (env forms)
-  (with-slots (output) env
-    (dolist (form forms output)
-      (dolist (number (c8-eval-form-1 env form))
-        (when (>= (fill-pointer output) (array-total-size output)) 
-          (error "Your program is too large!"))
-        (vector-push number output)))))
+  (let ((size (case (env-target env)
+                (xo-chip (- #x10000 +START+))
+                (t (- #x1000 +START+)))))
+    (with-slots (output) env
+      (dolist (form forms output)
+        (dolist (number (c8-eval-form-1 env form))
+          (when (>= (fill-pointer output) size) 
+            (error "Your program is too large!"))
+          (vector-push number output))))))
 
 (defun c8-compile (filename &key (using-main? t) initial-step-only?)
   (let ((parsed (parse filename))
