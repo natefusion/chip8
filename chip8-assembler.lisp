@@ -99,13 +99,16 @@
 (defun instruction? (exp)
   (case exp
     ((EQ NEQ SET ADD OR AND XOR SUB
-         SHR SUBN SHL RAND DRAW BCD WRITE
-         READ CLEAR RET CALL JUMP JUMP0)
+         SHR SUBN SHL DRAW BCD WRITE
+         READ CLEAR RET CALL JUMP JUMP0
+         EXIT LORES HIRES READ-FLAGS WRITE-FLAGS
+         SCROLL-DOWN SCROLL-RIGHT SCROLL-LEFT
+         SCROLL-UP PLANE AUDIO)
      t)))
 
 (defun builtin-func? (exp)
   (case exp
-    ((mut def proc if then else \: loop while include macro let) t)))
+    ((mut def proc if then else \: loop while include macro let target) t)))
 
 (defun special-func? (exp)
   (or (instruction? exp) (builtin-func? exp)))
@@ -118,7 +121,7 @@
     (vc #xc) (vd #xd) (ve #xe) (vf #xf)))
 
 (defun fake? (exp)
-  (case exp ((KEY DT ST I) t)))
+  (case exp ((KEY DT ST I BIG RAND) t)))
 
 (defun special-val? (exp)
   (or (v-reg? exp) (fake? exp)
@@ -130,7 +133,8 @@
   (using-main? t)
   (jump-to-main nil)
   (has-main? nil)
-  (context (list 'global))
+  (target 'chip8)
+  (context (list))
   (local-values (list)) 
   (values (copy-alist +BUILTIN-VALUES+))
   mutables
@@ -314,6 +318,7 @@
         (then (incf (env-pc env) 2) '((then)))
         (else (incf (env-pc env) 2) `((else ,(env-pc env))))
         (while (c8-eval-while-0 env (rest form)))
+        (target (setf (env-target env) (second form)) nil)
         (otherwise (c8-apply-0 env (first form) (rest form))))
       (error "'~a' is not a valid form" form)))
 
@@ -418,59 +423,96 @@
     (let ((op (append-bytes shell 12)))
       (list (chop op 8 8) (chop op 8)))))
 
-(defun c8-eval-ins-1 (name args)
+(defun c8-chip8-ins-set (instruction x y n nn nnn)
+  (match instruction
+    ((EQ V V)   (emit-op-1 9 X Y 0))
+    ((EQ V N)   (emit-op-1 4 X NN))
+    ((EQ V KEY) (emit-op-1 #xE X #xA 1))
+    
+    ((NEQ V KEY) (emit-op-1 #xE X 9 #xE))
+    ((NEQ V V)   (emit-op-1 5 X Y 0))
+    ((NEQ V N)   (emit-op-1 3 X NN))
+    
+    ((SET V N)   (emit-op-1 6 X NN))
+    ((SET V V)   (emit-op-1 8 X Y 0))
+    ((SET I N)   (emit-op-1 #xA NNN))
+    ((SET V DT)  (emit-op-1 #xF X 0 7))
+    ((SET DT V)  (emit-op-1 #xF X 1 5))
+    ((SET V ST)  (emit-op-1 #xF X 1 8))
+    ((SET I V)   (emit-op-1 #xF X 2 9)) 
+    ((SET V KEY) (emit-op-1 #xF X 0 #xA))
+    
+    ((ADD V N) (emit-op-1 7 X NN))
+    ((ADD V V) (emit-op-1 8 X Y 4))
+    ((ADD I V) (emit-op-1 #xF X 1 #xE))
+    
+    ((OR V V)   (emit-op-1 8 X Y 1))
+    ((AND V V)  (emit-op-1 8 X Y 2))
+    ((XOR V V)  (emit-op-1 8 X Y 3))
+    ((SUB V V)  (emit-op-1 8 X Y 5))
+    ((SHR V V)  (emit-op-1 8 X Y 6))
+    ((SUBN V V) (emit-op-1 8 X Y 7))
+    ((SHL V V)  (emit-op-1 8 X Y #xE))
+    
+    ((SET V RAND N) (emit-op-1 #xC X NN))
+    ((DRAW V V N) (emit-op-1 #xD X Y N))
+    ((BCD V)      (emit-op-1 #xF X 3 3))
+    ((WRITE V)    (emit-op-1 #xF X 5 5))
+    ((READ V)     (emit-op-1 #xF X 6 5))
+    ((CLEAR)      (emit-op-1 0 0 #xE 0))
+    ((RET)        (emit-op-1 0 0 #xE #xE))
+    ((CALL N)     (emit-op-1 2 NNN))
+    ((JUMP N)     (emit-op-1 1 NNN))
+    ((JUMP0 N)    (emit-op-1 #xB NNN))
+    (_ (error "Invalid instruction: ~a" instruction))))
+
+(defun c8-schip-ins-set (instruction x y n nn nnn)
+  (match instruction
+    ;; SCHIP 1.0
+    ((EXIT) (emit-op-1 0 0 #xF #xD))
+    ((LORES) (emit-op-1 0 0 #xF #xE))
+    ((HIRES) (emit-op-1 0 0 #xF #xF))
+    ((DRAW V V) (emit-op-1 #xD X Y 0))
+    ((READ-FLAGS V) (emit-op-1 #xF X 7 5))
+    ((WRITE-FLAGS V) (emit-op-1 #xF X 8 5))
+    
+    ;; SCHIP 1.1
+    ((SCROLL-DOWN N) (emit-op-1 0 0 #xC X))
+    ((SCROLL-RIGHT) (emit-op-1 0 0 #xF #xB))
+    ((SCROLL-LEFT) (emit-op-1 0 0 #xF #xC))
+    ((SET I BIG V) (emit-op-1 #xF X 3 0))
+    (_ (c8-chip8-ins-set instruction x y n nn nnn))))
+
+(defun c8-xo-chip-ins-set (instruction x y n nn nnn nnnn)
+  ;; xo-chip has 64kb of memory, make sure it is implemented
+  (match instruction
+    ((SCROLL-UP N) (emit-op-1 0 0 #xD N))
+    ((WRITE V V) (emit-op-1 5 X Y 2))
+    ((READ V V) (emit-op-1 5 X Y 3))
+    ((SET I BIG N) (emit-op-1 #xF 0 0 0 NNNN))
+    ((PLANE N) (emit-op-1 #xF X 0 1))
+    ((AUDIO) (emit-op-1 #xF 0 0 2))
+    ((SET PITCH V) (emit-op-1 #xF X 3 #xA))
+    (_ (c8-schip-ins-set instruction x y n nn nnn))))
+
+(defun c8-eval-ins-1 (env name args)
   (let* ((sargs (strip-ins-args-1 args))
          (nnn (first sargs))  (x   (first sargs))
-         (y   (second sargs)) (kk  (second sargs))
+         (y   (second sargs)) (nn  (second sargs))
          (n   (third sargs))
-         (types (mapcar #'c8-type-1 args)))
+         (types (mapcar #'c8-type-1 args))
+         (instruction (list* name types)))
     
-    (match (list* name types)
-      ((EQ V V)   (emit-op-1 9 X Y 0))
-      ((EQ V N)   (emit-op-1 4 X KK))
-      ((EQ V KEY) (emit-op-1 #xE X #xA 1))
-        
-      ((NEQ V KEY) (emit-op-1 #xE X 9 #xE))
-      ((NEQ V V)   (emit-op-1 5 X Y 0))
-      ((NEQ V N)   (emit-op-1 3 X KK))
-        
-      ((SET V N)   (emit-op-1 6 X KK))
-      ((SET V V)   (emit-op-1 8 X Y 0))
-      ((SET I N)   (emit-op-1 #xA NNN))
-      ((SET V DT)  (emit-op-1 #xF X 0 7))
-      ((SET DT V)  (emit-op-1 #xF X 1 5))
-      ((SET V ST)  (emit-op-1 #xF X 1 8))
-      ((SET I V)   (emit-op-1 #xF X 2 9)) 
-      ((SET V KEY) (emit-op-1 #xF X 0 #xA))
-        
-      ((ADD V N) (emit-op-1 7 X KK))
-      ((ADD V V) (emit-op-1 8 X Y 4))
-      ((ADD I V) (emit-op-1 #xF X 1 #xE))
-        
-      ((OR V V)   (emit-op-1 8 X Y 1))
-      ((AND V V)  (emit-op-1 8 X Y 2))
-      ((XOR V V)  (emit-op-1 8 X Y 3))
-      ((SUB V V)  (emit-op-1 8 X Y 5))
-      ((SHR V V)  (emit-op-1 8 X Y 6))
-      ((SUBN V V) (emit-op-1 8 X Y 7))
-      ((SHL V V)  (emit-op-1 8 X Y #xE))
-        
-      ((RAND V N)   (emit-op-1 #xC X KK))
-      ((DRAW V V N) (emit-op-1 #xD X Y N))
-      ((BCD V)      (emit-op-1 #xF X 3 3))
-      ((WRITE V)    (emit-op-1 #xF X 5 5))
-      ((READ V)     (emit-op-1 #xF X 6 5))
-      ((CLEAR)      (emit-op-1 0 0 #xE 0))
-      ((RET)        (emit-op-1 0 0 #xE #xE))
-      ((CALL N)     (emit-op-1 2 NNN))
-      ((JUMP N)     (emit-op-1 1 NNN))
-      ((JUMP0 N)    (emit-op-1 #xB NNN))
-      (_ (error "Invalid instruction: ~a ~a" name args)))))
+    (case (env-target env)
+      (chip8 (c8-chip8-ins-set instruction x y n nn nnn))
+      (schip (c8-schip-ins-set instruction x y n nn nnn))
+      (xo-chip (c8-xo-chip-ins-set instruction x y n nn nnn nnn))
+      (t (error "Invalid target: ~a" (env-target env))))))
 
 (defun c8-eval-form-1 (env form)
   (case (first form)
     (include (c8-eval-include-1 env (rest form)))
-    (otherwise (c8-eval-ins-1 (first form) (c8-eval-args-1 env (rest form))))))
+    (otherwise (c8-eval-ins-1 env (first form) (c8-eval-args-1 env (rest form))))))
 
 (defun c8-eval-program-1 (env forms)
   (with-slots (output) env
