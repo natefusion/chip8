@@ -130,7 +130,8 @@
   (using-main? t)
   (jump-to-main nil)
   (has-main? nil)
-  (local-values (list))
+  (context (list 'global))
+  (local-values (list)) 
   (values (copy-alist +BUILTIN-VALUES+))
   mutables
   labels
@@ -182,8 +183,7 @@
 
 (defun c8-eval-mut-0 (env name value)
   (when (null value) (error "'def ~a' was not initialized" name))
-  (when (or (assoc-local name (env-local-values env))
-            (assoc name (env-values env))
+  (when (or (assoc name (env-values env))
             (assoc name (env-labels env))
             (special-val? name))
     (error "Redefinition of ~a" name))
@@ -224,16 +224,18 @@
                 (return (prog1 (c8-eval-0 env (cddr form))
                           (pop (env-local-values env))))))
 
-(defun c8-macroexpand-0 (env macro args)
+(defun c8-macroexpand-0 (env name macro args)
   (loop for key in (macro-parameters macro)
         for datum in args
         if (listp key)
           collect (cons (first key) datum) into local-macros
         else
           collect (cons key (c8-eval-arg-0 env datum)) into local-values
-        finally (push local-macros (env-local-macros env))
+        finally (push name (env-context env))
+                (push local-macros (env-local-macros env))
                 (push local-values (env-local-values env))
                 (return (prog1 (c8-eval-0 env (macro-body macro))
+                          (pop (env-context env))
                           (pop (env-local-macros env))
                           (pop (env-local-values env))))))
 
@@ -244,7 +246,10 @@
           ((instruction? app)
            (incf (env-pc env) 2)
            (list (list* app (loop for arg in args collect (c8-eval-arg-0 env arg)))))
-          (mac (prog1 (c8-macroexpand-0 env mac (list* (macro-calls mac) args))
+          (mac (prog2 (when (eq app (first (env-context env)))
+                        (error "Tried to call ~a in context ~a. Recursion is not allowed"
+                               app (first (env-context env))))
+                   (c8-macroexpand-0 env app mac (list* (macro-calls mac) args))
                  (incf (macro-calls mac))))
           (t (error "Unknown application (~a) in: ~a ~a" app app args)))))
 
