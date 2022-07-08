@@ -429,7 +429,7 @@
       ((NEQ V V)   (emit-op-1 5 X Y 0))
       ((NEQ V N)   (emit-op-1 3 X KK))
         
-      ((SET V N)   (emit-op-1 6 X Y))
+      ((SET V N)   (emit-op-1 6 X KK))
       ((SET V V)   (emit-op-1 8 X Y 0))
       ((SET I N)   (emit-op-1 #xA NNN))
       ((SET V DT)  (emit-op-1 #xF X 0 7))
