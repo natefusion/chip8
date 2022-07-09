@@ -438,7 +438,7 @@
     ((SET I N)   (emit-op-1 #xA NNN))
     ((SET V DT)  (emit-op-1 #xF X 0 7))
     ((SET DT V)  (emit-op-1 #xF X 1 5))
-    ((SET V ST)  (emit-op-1 #xF X 1 8))
+    ((SET ST V)  (emit-op-1 #xF X 1 8))
     ((SET I HEX V) (emit-op-1 #xF X 2 9)) 
     ((SET V KEY) (emit-op-1 #xF X 0 #xA))
     
@@ -501,7 +501,7 @@
          (n   (third sargs))
          (types (mapcar #'c8-type-1 args))
          (instruction (list* name types)))
-    
+
     (case (env-target env)
       (chip8 (c8-chip8-ins-set instruction x y n nn nnn))
       (schip (c8-schip-ins-set instruction x y n nn nnn))
