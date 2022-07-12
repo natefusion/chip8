@@ -135,7 +135,6 @@
   (has-main? nil)
   (target 'chip8)
   context
-  current
   local-values
   (values (copy-alist +BUILTIN-VALUES+))
   mutables
@@ -220,7 +219,6 @@
     nil))
 
 (defun c8-eval-let-0 (env form)
-  (setf (env-current env) form)
   (when (oddp (length (second form)))
     (error "Odd number of items in let form: ~a" (second form)))
   (loop for x = (second form) then (cddr x)
@@ -266,7 +264,6 @@
     (t (error "Test must be eq, neq, gt, ge, lt, le"))))
 
 (defun c8-eval-loop-0 (env body)
-  (setf (env-current env) body)
   (let* ((pc (env-pc env))
          (lp (append (c8-eval-0 env body)
                      (c8-eval-form-0 env `(JUMP ,pc)))))
@@ -278,22 +275,26 @@
             lp)))
 
 (defun c8-eval-if-0 (env form)
-  (setf (env-current env) form)
-  (let* ((test (list (if (equal (fifth form) 'test)
-                         (flip-test (second form)) (second form))
+  (let* ((then? (equal (fifth form) '(then)))
+         (test (list (if then? (flip-test (second form)) (second form))
                      (third form) (fourth form))) 
          (body (c8-eval-0 env (list* test (nthcdr 4 form))))
          (else-pc (second (find 'else body :key #'car))))
+
+    (when (and (not then?)
+               (>= (length body) 4))
+      (error "If statements without then or else cannot have more than two statements~%: ~a" form))
     
-    (mapcar (lambda (form)
-              (case (first form)
-                (then (if else-pc `(JUMP ,else-pc) `(JUMP ,(env-pc env))))
-                (else `(JUMP ,(env-pc env)))
-                (t form)))
+    (mapcar (lambda (f)
+              (case (first f)
+                (then (if else-pc `(JUMP ,else-pc) `(JUMP ,(env-pc env))) )
+                (else (if then?
+                          `(JUMP ,(env-pc env))
+                          (error "else without then in: ~a" form)))
+                (t f)))
             body)))
 
 (defun c8-eval-proc-0 (env name body)
-  (setf (env-current env) body)
   (c8-eval-label-0 env name)
   (append (c8-eval-0 env body)
           (unless (eq name 'main) (c8-eval-form-0 env '(ret)))))
