@@ -108,7 +108,9 @@
 
 (defun builtin-func? (exp)
   (case exp
-    ((mut def proc if then else \: loop while include macro let target) t)))
+    ((mut def proc if then else \: loop
+          while include macro let target break)
+     t)))
 
 (defun special-func? (exp)
   (or (instruction? exp) (builtin-func? exp)))
@@ -270,7 +272,7 @@
 
     (mapcar (lambda (form)
               (case (first form)
-                (while `(JUMP ,(env-pc env)))
+                (break `(JUMP ,(env-pc env)))
                 (t form)))
             lp)))
 
@@ -309,7 +311,7 @@
 (defun c8-eval-while-0 (env test)
   (incf (env-pc env) 2) ;; makes room for jump
   (append (c8-eval-form-0 env (list (flip-test (first test)) (second test) (third test)))
-          '((while))))
+          '((break))))
 
 (defun c8-eval-form-0 (env form)
   (if (listp form)
@@ -326,6 +328,7 @@
         (let (c8-eval-let-0 env form))
         (then (incf (env-pc env) 2) '((then)))
         (else (incf (env-pc env) 2) `((else ,(env-pc env))))
+        (break (incf (env-pc env) 2) '((break)))
         (while (c8-eval-while-0 env (rest form)))
         (target (setf (env-target env) (second form)) nil)
         (otherwise (c8-apply-0 env (first form) (rest form))))
