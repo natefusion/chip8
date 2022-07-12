@@ -309,9 +309,8 @@
           (t (error "Could not find main label")))))
 
 (defun c8-eval-while-0 (env test)
-  (incf (env-pc env) 2) ;; makes room for jump
   (append (c8-eval-form-0 env (list (flip-test (first test)) (second test) (third test)))
-          '((break))))
+          (c8-eval-form-0 env '(break))))
 
 (defun c8-eval-form-0 (env form)
   (if (listp form)
