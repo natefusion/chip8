@@ -134,12 +134,13 @@
   (jump-to-main nil)
   (has-main? nil)
   (target 'chip8)
-  (context (list))
-  (local-values (list)) 
+  context
+  current
+  local-values
   (values (copy-alist +BUILTIN-VALUES+))
   mutables
   labels
-  (local-macros (list))
+  local-macros
   (macros (copy-alist +BUILTIN-MACROS+)))
 
 (defun assoc-local (item alists)
@@ -162,9 +163,10 @@
               (t arg)))))
 
 (defun c8-eval-include-0 (env numbers)
-  (list (list* 'include (loop for n in numbers
-                              collect (c8-eval-arg-0 env n)
-                              do (incf (env-pc env))))))
+  (loop for n in numbers
+        collect (c8-eval-arg-0 env n) into f
+        do (incf (env-pc env))
+        finally (return (list f))))
 
 (defun c8-check-main-0 (env name)
   (with-slots (pc using-main? jump-to-main has-main?) env
@@ -218,6 +220,7 @@
     nil))
 
 (defun c8-eval-let-0 (env form)
+  (setf (env-current env) form)
   (when (oddp (length (second form)))
     (error "Odd number of items in let form: ~a" (second form)))
   (loop for x = (second form) then (cddr x)
@@ -263,9 +266,11 @@
     (t (error "Test must be eq, neq, gt, ge, lt, le"))))
 
 (defun c8-eval-loop-0 (env body)
+  (setf (env-current env) body)
   (let* ((pc (env-pc env))
          (lp (append (c8-eval-0 env body)
                      (c8-eval-form-0 env `(JUMP ,pc)))))
+
     (mapcar (lambda (form)
               (case (first form)
                 (while `(JUMP ,(env-pc env)))
@@ -273,6 +278,7 @@
             lp)))
 
 (defun c8-eval-if-0 (env form)
+  (setf (env-current env) form)
   (let* ((test (list (if (equal (fifth form) 'test)
                          (flip-test (second form)) (second form))
                      (third form) (fourth form))) 
@@ -287,6 +293,7 @@
             body)))
 
 (defun c8-eval-proc-0 (env name body)
+  (setf (env-current env) body)
   (c8-eval-label-0 env name)
   (append (c8-eval-0 env body)
           (unless (eq name 'main) (c8-eval-form-0 env '(ret)))))
@@ -299,6 +306,7 @@
           (t (error "Could not find main label")))))
 
 (defun c8-eval-while-0 (env test)
+  (incf (env-pc env) 2) ;; makes room for jump
   (append (c8-eval-form-0 env (list (flip-test (first test)) (second test) (third test)))
           '((while))))
 
@@ -400,10 +408,6 @@
                    ((special-val? arg) arg)
                    (t (error "Unknown argument: ~a" arg)))))))
 
-(defun c8-eval-include-1 (env numbers)
-  (loop for n in numbers
-        collect (chop (truncate (c8-eval-arg-1 env n)) 8)))
-
 (defun strip-ins-args-1 (args)
   (loop for x in (remove-if #'fake? args)
         collect (if-let (v (v-reg? x)) v x)))
@@ -420,9 +424,11 @@
                  (car nums)
                  (dpb (car nums) (byte pos pos)
                       (append-bytes (cdr nums) (- pos 4))))))
-    (let ((op (append-bytes shell 28)))
-      (list* (chop op 8 24) (chop op 8 16)
-             (when long (list (chop op 8 8) (chop op 8)))))))
+    (let ((op (append-bytes shell (if long 28 12))))
+      (if long
+          (list (chop op 8 24) (chop op 8 16)
+                (chop op 8 8) (chop op 8))
+          (list (chop op 8 8) (chop op 8))))))
 
 (defun c8-chip8-ins-set (instruction x y n nn nnn)
   (match instruction
@@ -465,7 +471,10 @@
     ((CALL N)     (emit-op-1 nil 2 NNN))
     ((JUMP N)     (emit-op-1 nil 1 NNN))
     ((JUMP0 N)    (emit-op-1 nil #xB NNN))
-    (_ (error "Invalid instruction: ~a" instruction))))
+    (_ (error (concatenate 'string
+                           "Invalid instruction: ~a~%"
+                           "Did you maybe not set a target?")
+              instruction))))
 
 (defun c8-schip-ins-set (instruction x y n nn nnn)
   (match instruction
@@ -509,10 +518,14 @@
       (xo-chip (c8-xo-chip-ins-set instruction x y n nn nnn nnn))
       (t (error "Invalid target: ~a" (env-target env))))))
 
+(defun c8-eval-include-1 (env numbers)
+  (loop for n in numbers
+        collect (chop (truncate (c8-eval-arg-1 env n)) 8)))
+
 (defun c8-eval-form-1 (env form)
-  (case (first form)
-    (include (c8-eval-include-1 env (rest form)))
-    (otherwise (c8-eval-ins-1 env (first form) (c8-eval-args-1 env (rest form))))))
+  (if (numberp (first form))
+      (c8-eval-include-1 env form)
+      (c8-eval-ins-1 env (first form) (c8-eval-args-1 env (rest form)))))
 
 (defun c8-eval-program-1 (env forms)
   (let ((size (case (env-target env)
