@@ -167,7 +167,7 @@
   (loop for n in numbers
         collect (c8-eval-arg-0 env n) into f
         do (incf (env-pc env))
-        finally (return (list f))))
+        finally (return (list `(include ,@f)))))
 
 (defun c8-check-main-0 (env name)
   (with-slots (pc using-main? jump-to-main has-main?) env
@@ -526,9 +526,9 @@
         collect (chop (truncate (c8-eval-arg-1 env n)) 8)))
 
 (defun c8-eval-form-1 (env form)
-  (if (numberp (first form))
-      (c8-eval-include-1 env form)
-      (c8-eval-ins-1 env (first form) (c8-eval-args-1 env (rest form)))))
+  (case (first form)
+    (include (c8-eval-include-1 env (rest form)))
+    (t (c8-eval-ins-1 env (first form) (c8-eval-args-1 env (rest form))))))
 
 (defun c8-eval-program-1 (env forms)
   (let ((size (case (env-target env)
