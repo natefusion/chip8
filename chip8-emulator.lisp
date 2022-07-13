@@ -74,9 +74,8 @@
       (incf pc 2)
       
       (match (list w x y n)
-        ((0 0 #xE #x0) (dotimes (x (array-dimension gfx 0))
-                         (dotimes (y (array-dimension gfx 1))
-                           (setf (aref gfx x y) 0))))
+        ((0 0 #xE #x0) (dotimes (i (array-total-size gfx))
+                         (setf (row-major-aref gfx i) 0)))
         
         ((0 0 #xE #xE) (setf pc (aref stack sp)
                              sp (1- sp)))
@@ -197,7 +196,7 @@
                         (+ 5 (* +SCALE+ +W+)) 11
                         30
                         raylib:+yellow+))
-      
+
     (dotimes (x (array-dimension gfx 0))
       (dotimes (y (array-dimension gfx 1))
         (unless (zerop (aref gfx x y))
