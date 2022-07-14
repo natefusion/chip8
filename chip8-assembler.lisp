@@ -498,7 +498,7 @@
 
 (defun c8-xo-chip-ins-set (instruction x y n nn nnn nnnn)
   (match instruction
-    ((SCROLL-UP N) (emit-op-1 nil 0 0 #xD N))
+    ((SCROLL-UP N) (emit-op-1 nil 0 0 #xD X))
     ((WRITE V V) (emit-op-1 nil 5 X Y 2))
     ((READ V V) (emit-op-1 nil 5 X Y 3))
     ((SET I LONG N) (emit-op-1 t #xF 0 0 0 NNNN))
