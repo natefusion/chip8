@@ -97,9 +97,11 @@
   (loop for one = (read-byte f nil)
         for two = (read-byte f nil)
         for pc from 512 by 2
-        while (and one two)
-        for opcode = (dpb one (byte 8 8) two)
-        collect (list (list one two) (dump state opcode pc))))
+        while one
+        for opcode = (dpb one (byte 8 8) (if two two 0))
+        collect (if (and one two)
+                    (list (list one two) (dump state opcode pc))
+                    (list (list one) one))))
 
 (defun c8-read (filename)
   (let* ((state (make-state))
