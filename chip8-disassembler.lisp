@@ -7,7 +7,7 @@
 (defun make-name (name num)
   (read-from-string (format nil "~A~X" name num)))
 
-(defun dump (state opcode)
+(defun dump (state opcode pc)
   (with-slots (labels subroutines data) state
     (let* ((nnn (chop opcode 12))
            (nn  (chop opcode 8))
@@ -30,9 +30,11 @@
         ((0 0 #xF #xD) '(EXIT))
         ((0 0 #xF #xF) '(HIRES))
         ((1 _ _ _)
-         (if-let (x (getf labels nnn)) 
+         (if-let (x (getf labels nnn))
            `(JUMP ,x)
-           (let ((name (make-name 'label- lsize)))
+           (let ((name (cond ((= pc 512) 'main)
+                             ((> pc nnn) (make-name 'loop- lsize))
+                             (t (make-name 'label- lsize)))))
              (push `(\: ,name) labels)
              (push nnn labels)
              `(JUMP ,name))))
@@ -94,9 +96,10 @@
 (defun c8-dasm (state f)
   (loop for one = (read-byte f nil)
         for two = (read-byte f nil)
+        for pc from 512 by 2
         while (and one two)
         for opcode = (dpb one (byte 8 8) two)
-        collect (list (list one two) (dump state opcode))))
+        collect (list (list one two) (dump state opcode pc))))
 
 (defun c8-read (filename)
   (let* ((state (make-state))
@@ -106,12 +109,16 @@
       (loop for x in ins
             for pc from 512 by 2
             with data? = nil
-            do (if-let (y (getf data pc))
-                 (progn (setf data? t) (print y)))
-               (if-let (y (getf labels pc))
-                 (progn (setf data? nil) (print y)))
-               (if-let (y (getf subroutines pc))
-                 (progn (setf data? nil) (print y)))
+            
+            for lab = (let ((d (getf data pc))
+                            (l (getf labels pc))
+                            (s (getf subroutines pc)))
+                        (cond (d (setf data? t) d)
+                              (l (setf data? nil) l)
+                              (s (setf data? nil) s)
+                              (t nil)))
+            
+            do (when lab (print lab))
                (print (if data? `(include ,@(first x)) (second x)))))))
 
 
