@@ -61,7 +61,7 @@
         ((8 _ _ #xE) `(SHL ,xn ,yn))
         ((9 _ _ 0) `(EQ ,xn ,yn))
         ((#xA _ _ _)
-         (if-let (x (getf labels nnn)) 
+         (if-let (x (getf data nnn)) 
            `(SET I ,x)
            (let ((name (make-name 'data- dsize)))
              (push `(\: ,name) data)
