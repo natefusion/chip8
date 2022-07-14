@@ -112,15 +112,13 @@
             for pc from 512 by 2
             with data? = nil
             
-            for lab = (let ((d (getf data pc))
-                            (l (getf labels pc))
-                            (s (getf subroutines pc)))
-                        (cond (d (setf data? t) d)
-                              (l (setf data? nil) l)
-                              (s (setf data? nil) s)
-                              (t nil)))
-            
-            do (when lab (print lab))
+            do (let ((d (getf data pc))
+                     (l (getf labels pc))
+                     (s (getf subroutines pc)))
+                 (when d (setf data? t) (print d))
+                 (when s (setf data? nil) (print s))
+                 (when l (setf data? nil) (print l)))
+               
                (print (if data? `(include ,@(first x)) (second x)))))))
 
 
