@@ -13,11 +13,12 @@
 
 (defun make-sexp (line)
   (let ((line (apply #'concatenate 'string
-                     (map 'list #'c8-replace line)))))
-  (case (char line 0)
-    (#\( line)
-    (#\. (substitute #\  #\. line :end 1 :test #'char=))
-    (t (concatenate 'string "(" line ")"))))
+                     (map 'list #'c8-replace line))))
+    
+    (case (char line 0)
+      (#\( line)
+      (#\. (substitute #\  #\. line :end 1 :test #'char=))
+      (t (concatenate 'string "(" line ")")))))
 
 (defun remove-comment (line)
   (subseq line 0 (position #\; line :test #'char=)))
