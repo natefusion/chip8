@@ -37,10 +37,10 @@
   `(cond ,@(dolist (clause clauses clauses)
              (setf (car clause)
                    (flet ((ekual (x y) (or (equal x y) (equal x '_))))
-                     (if (listp (car clause))
-                         `(when (eql (list-length ',(car clause)) (list-length ,pattern))
+                     `(if (and (listp ,pattern) (listp ',(car clause)))
+                          (when (eql (list-length ',(car clause)) (list-length ,pattern))
                             (every ,#'ekual ',(car clause) ,pattern))
-                         `(funcall ,#'ekual ',(car clause) ,pattern)))))))
+                          (funcall ,#'ekual ',(car clause) ,pattern)))))))
 
 (defun chop (number size &optional (pos 0))
   (ldb (byte size pos) number))
@@ -131,9 +131,7 @@
 (defstruct env
   (output (make-array +MAX-SIZE+ :element-type '(unsigned-byte 8) :fill-pointer 0))
   (pc (+ +START+ +OFFSET+))
-  (using-main? t)
-  (jump-to-main nil)
-  (has-main? nil)
+  main-label
   (target 'chip8)
   context
   local-values
@@ -169,12 +167,11 @@
         finally (return (list `(include ,@f)))))
 
 (defun c8-check-main-0 (env name)
-  (with-slots (pc using-main? jump-to-main has-main?) env
-    (when (and using-main? (eq name 'main))
-      (setf has-main? t)
-      (if (= (+ +START+ +OFFSET+) pc)
-          (setf pc +START+)
-          (setf jump-to-main pc)))))
+  (with-slots (pc main-label) env
+    (when (eq name 'main)
+      (when (= pc (+ +START+ +OFFSET+))
+        (setf pc +START+))
+      (setf main-label pc))))
 
 (defun c8-eval-label-0 (env name &optional numbers)
   (when (null name) (error "Label not given a name"))
@@ -269,13 +266,13 @@
          (lp (append (c8-eval-0 env body)
                      (c8-eval-form-0 env `(JUMP ,pc)))))
 
-    (mapcar (lambda (form)
-              (case (first form)
-                (break `(JUMP ,(env-pc env)))
-                (t form)))
-            lp)))
+    (loop for form in lp
+          collect (match form
+                    ((break) `(JUMP ,(env-pc env)))
+                    (_ form)))))
 
 (defun c8-eval-if-0 (env form)
+  (print form)
   (let* ((then? (equal (fifth form) '(then)))
          (test (list (if then? (flip-test (second form)) (second form))
                      (third form) (fourth form))) 
@@ -285,15 +282,14 @@
     (when (and (not then?)
                (>= (length body) 4))
       (error "If statements without then or else cannot have more than two statements~%: ~a" form))
-    
-    (mapcar (lambda (f)
-              (case (first f)
-                (then (if else-pc `(JUMP ,else-pc) `(JUMP ,(env-pc env))) )
-                (else (if then?
-                          `(JUMP ,(env-pc env))
-                          (error "else without then in: ~a" form)))
-                (t f)))
-            body)))
+
+    (loop for f in body
+          collect (match f
+                    ((then) (if else-pc `(JUMP ,else-pc) `(JUMP ,(env-pc env))))
+                    ((else _) (if then?
+                                `(JUMP ,(env-pc env))
+                                (error "else without then in: ~a" form)))
+                    (_ f)))))
 
 (defun c8-eval-proc-0 (env name body)
   (c8-eval-label-0 env name)
@@ -301,10 +297,9 @@
           (unless (eq name 'main) (c8-eval-form-0 env '(ret)))))
 
 (defun c8-insert-main-0 (env forms)
-  (with-slots (using-main? jump-to-main has-main?) env
-    (cond ((not using-main?) forms)
-          (jump-to-main (append (c8-eval-form-0 env `(JUMP ,jump-to-main)) forms))
-          (has-main? forms)
+  (with-slots (main-label) env
+    (cond ((= main-label +START+) forms)
+          ((> main-label +START+) (append (c8-eval-form-0 env `(JUMP ,main-label)) forms))
           (t (error "Could not find main label")))))
 
 (defun c8-eval-while-0 (env test)
@@ -540,9 +535,9 @@
             (error "Your program is too large!"))
           (vector-push number output))))))
 
-(defun c8-compile (filename &key (using-main? t) initial-step-only?)
+(defun c8-compile (filename &key initial-step-only?)
   (let ((parsed (parse filename))
-        (env (make-env :using-main? using-main?)))
+        (env (make-env)))
     (if initial-step-only?
         (c8-eval-program-0 env parsed)
         (c8-eval-program-1 env (c8-eval-program-0 env parsed)))))
