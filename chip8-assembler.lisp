@@ -272,7 +272,6 @@
                     (_ form)))))
 
 (defun c8-eval-if-0 (env form)
-  (print form)
   (let* ((then? (equal (fifth form) '(then)))
          (test (list (if then? (flip-test (second form)) (second form))
                      (third form) (fourth form))) 
