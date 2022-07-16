@@ -1,12 +1,6 @@
 (defmacro if-let (spec then &optional else)
   `(let (,spec) (if ,(car spec) ,then ,else)))
 
-(defun wrap (line)
-  (case (char line 0)
-    (#\( line)
-    (#\. (nsubstitute #\  #\. line :end 1 :test #'char=))
-    (otherwise (concatenate 'string "(" line ")"))))
-
 (defun c8-replace (ch)
   (case ch
     (#\, ")(")
@@ -15,11 +9,15 @@
     (#\| "|\\||")
     (#\[ "(")
     (#\] ")")
-    (otherwise (string ch))))
+    (t (string ch))))
 
 (defun make-sexp (line)
-  (wrap (apply #'concatenate 'string
-               (map 'list #'c8-replace line))))
+  (let ((line (apply #'concatenate 'string
+                     (map 'list #'c8-replace line)))))
+  (case (char line 0)
+    (#\( line)
+    (#\. (substitute #\  #\. line :end 1 :test #'char=))
+    (t (concatenate 'string "(" line ")"))))
 
 (defun remove-comment (line)
   (subseq line 0 (position #\; line :test #'char=)))
@@ -27,7 +25,7 @@
 (defun parse (filename)
   (with-open-file (f filename)
     (loop for line = (read-line f nil)
-          for trimmed = (remove-comment (string-trim " " line))
+          for trimmed = (string-trim " " (remove-comment line))
           while line
           unless (uiop:emptyp trimmed)
             collect (make-sexp trimmed) into final
@@ -330,7 +328,7 @@
         (break (incf (env-pc env) 2) '((break)))
         (while (c8-eval-while-0 env (rest form)))
         (target (setf (env-target env) (second form)) nil)
-        (otherwise (c8-apply-0 env (first form) (rest form))))
+        (t (c8-apply-0 env (first form) (rest form))))
       (error "'~a' is not a valid form" form)))
 
 (defun c8-eval-0 (env forms)
@@ -405,7 +403,7 @@
              (sign (signum x))
              (ceil (ceiling x))
              (floor (floor x))
-             (otherwise (error "Invalid application: ~a" arg)))))
+             (t (error "Invalid application: ~a" arg)))))
         (t (let ((label (cdr (assoc arg (env-labels env)))))
              (cond (label label)
                    ((special-val? arg) arg)
