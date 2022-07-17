@@ -268,7 +268,7 @@
 
     (loop for form in lp
           collect (match form
-                    ((break) `(JUMP ,(env-pc env)))
+                    ((break jump-to-end-loop) `(JUMP ,(env-pc env)))
                     (_ form)))))
 
 (defun c8-eval-if-0 (env form)
@@ -276,18 +276,24 @@
          (test (list (if then? (flip-test (second form)) (second form))
                      (third form) (fourth form))) 
          (body (c8-eval-0 env (list* test (nthcdr 4 form))))
-         (else-pc (second (find 'else body :key #'car))))
+         (else-pc (third (find 'jump-to-end-if body :key #'second))))
 
     (when (and (not then?)
                (>= (length body) 4))
-      (error "If statements without then or else cannot have more than two statements~%: ~a" form))
+      (error "If statements without then cannot have more than two statements~%: ~a" form))
 
     (loop for f in body
           collect (match f
-                    ((then) (if else-pc `(JUMP ,else-pc) `(JUMP ,(env-pc env))))
-                    ((else _) (if then?
-                                `(JUMP ,(env-pc env))
-                                (error "else without then in: ~a" form)))
+                    ((then jump-to-else-if)
+                     (if else-pc
+                         `(JUMP ,else-pc)
+                         `(JUMP ,(env-pc env))))
+                    
+                    ((else jump-to-end-if _)
+                     (if then?
+                         `(JUMP ,(env-pc env))
+                         (error "else without then in: ~a" form)))
+                    
                     (_ f)))))
 
 (defun c8-eval-proc-0 (env name body)
@@ -318,9 +324,9 @@
         (include (c8-eval-include-0 env (rest form)))
         (macro (c8-eval-macro-0 env form))
         (let (c8-eval-let-0 env form))
-        (then (incf (env-pc env) 2) '((then)))
-        (else (incf (env-pc env) 2) `((else ,(env-pc env))))
-        (break (incf (env-pc env) 2) '((break)))
+        (then (incf (env-pc env) 2) '((then jump-to-else-if)))
+        (else (incf (env-pc env) 2) `((else jump-to-end-if ,(env-pc env))))
+        (break (incf (env-pc env) 2) '((break jump-to-end-loop)))
         (while (c8-eval-while-0 env (rest form)))
         (target (setf (env-target env) (second form)) nil)
         (t (c8-apply-0 env (first form) (rest form))))
