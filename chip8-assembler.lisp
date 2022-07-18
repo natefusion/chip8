@@ -298,11 +298,11 @@
                    (then
                     (when then-pc (error "Too many then statements in: ~a" form))
                     (setf then-pc (incf (env-pc env) 2)) ;; make room for jump
-                    '((then jump-to-else-if)))          ;; placeholder for jump
+                    '((then jump-to-else-if))) ;; placeholder for jump
                    (else
                     (when else-pc (error "Too many else statements in: ~a" form))
                     (setf else-pc (incf (env-pc env) 2)) ;; make room for jump
-                    `((else jump-to-end-if)))            ;; placeholder for jump
+                    `((else jump-to-end-if))) ;; placeholder for jump
                    (t (c8-eval-form-0 env f)))))
 
          (end-pc (env-pc env)))
@@ -310,19 +310,21 @@
     (if (null then-pc)
         (cond (else-pc (error "Else without then in: ~a" form))
               ((> (length body) 1) (error "If statements without then or else cannot have more than one statement~%: ~a" form)))
-        (when (> (- then-pc test-pc) 4)
+        (when (> (- then-pc test-pc) 2)
           (error "There cannnot be any statements between the test and then statements in: ~a" form)))
     
-    (cons (list (if then-pc (flip-test (first test)) (first test)) (second test) (third test))
-            (c8-with-forms-eval-0 (f body collect)
-              (match f
-                ((then jump-to-else-if)
-                 (if else-pc
-                     `(JUMP ,else-pc)
-                     `(JUMP ,end-pc)))
-                ((else jump-to-end-if)
-                 `(JUMP ,end-pc))
-                (_ f))))))
+    (when then-pc
+      (setf test (list (flip-test (first test)) (second test) (third test))))
+    
+    (cons test (c8-with-forms-eval-0 (f body collect)
+                 (match f
+                   ((then jump-to-else-if)
+                    (if else-pc
+                        `(JUMP ,else-pc)
+                        `(JUMP ,end-pc)))
+                   ((else jump-to-end-if)
+                    `(JUMP ,end-pc))
+                   (_ f))))))
 
 (defun c8-eval-proc-0 (env name body)
   (c8-eval-label-0 env name)
