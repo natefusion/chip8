@@ -270,17 +270,22 @@
 (defun c8-eval-loop-0 (env body)
   (let* ((pc (env-pc env))
          (lp (append (c8-with-forms-eval-0 (f body append)
-                       (if (equal '(while) f)
-                           (progn (incf (env-pc env) 2)                 ;; make room for jump
-                                  (append (c8-eval-form-0 env (list (flip-test (second f)) (third f) (fourth f)))
-                                          '((break jump-to-end-loop)))) ;; placeholder for jump
-                         (c8-eval-form-0 env f)))
+                       (case (first f)
+                         (while
+                          (incf (env-pc env) 2) ;; make room for jump
+                          (list `(while ,@(first (c8-eval-form-0 env (rest f))))
+                                '(break))) ;; placeholder for jump
+                         (break
+                          (incf (env-pc env) 2) ;; make room for jump
+                          '((break)))           ;; placeholder for jump
+                         (t (c8-eval-form-0 env f))))
                      (c8-eval-form-0 env `(JUMP ,pc)))))
 
     (c8-with-forms-eval-0 (f lp collect)
-      (if (equal '(break jump-to-end-loop) f)
-          `(JUMP ,(env-pc env))
-          f))))
+      (match f
+        ((while _ _ _) (list (flip-test (second f)) (third f) (fourth f)))
+        ((break) `(JUMP ,(env-pc env)))
+        (_ f)))))
 
 (defun c8-eval-if-0 (env form)
   (let* ((test (first (c8-eval-form-0 env (list (second form) (third form) (fourth form)))))
@@ -292,7 +297,7 @@
                  (case (first f)
                    (then
                     (when then-pc (error "Too many then statements in: ~a" form))
-                    (setf then-pc (incf (env-pc env) )) ;; make room for jump
+                    (setf then-pc (incf (env-pc env) 2)) ;; make room for jump
                     '((then jump-to-else-if)))          ;; placeholder for jump
                    (else
                     (when else-pc (error "Too many else statements in: ~a" form))
@@ -303,11 +308,10 @@
          (end-pc (env-pc env)))
 
     (if (null then-pc)
-        (cond (else-pc (error "Then without else in: ~a" form))
-              ((>= (length body) 3) (error "If statements without then or else cannot have more than one statement~%: ~a" form)))
+        (cond (else-pc (error "Else without then in: ~a" form))
+              ((> (length body) 1) (error "If statements without then or else cannot have more than one statement~%: ~a" form)))
         (when (> (- then-pc test-pc) 4)
           (error "There cannnot be any statements between the test and then statements in: ~a" form)))
-
     
     (cons (list (if then-pc (flip-test (first test)) (first test)) (second test) (third test))
             (c8-with-forms-eval-0 (f body collect)
