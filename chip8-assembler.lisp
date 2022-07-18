@@ -148,6 +148,12 @@
 
 (declaim (ftype function c8-eval-arg-0 c8-eval-0 c8-eval-form-0))
 
+(defmacro c8-with-forms-eval-0 ((var list action) &body body)
+  `(loop for ,var in ,list
+         ,action (if (listp ,var)
+                 ,@body
+                 (error "'~a' is not a valid form" ,var))))
+
 (defun c8-eval-arg-0 (env arg)
   (if (listp arg)
       (list* (first arg) (loop for a in (rest arg) collect (c8-eval-arg-0 env a)))
@@ -264,12 +270,11 @@
 (defun c8-eval-loop-0 (env body)
   (let* ((pc (env-pc env))
          (lp (append (c8-with-forms-eval-0 (f body append)
-                       (case (first f)
-                         (while
-                          (incf (env-pc env) 2)                 ;; make room for jump
-                          (append (c8-eval-form-0 env (list (flip-test (second f)) (third f) (fourth f)))
-                                  '((break jump-to-end-loop)))) ;; placeholder for jump
-                         (t (c8-eval-form-0 env f))))
+                       (if (equal '(while) f)
+                           (progn (incf (env-pc env) 2)                 ;; make room for jump
+                                  (append (c8-eval-form-0 env (list (flip-test (second f)) (third f) (fourth f)))
+                                          '((break jump-to-end-loop)))) ;; placeholder for jump
+                         (c8-eval-form-0 env f)))
                      (c8-eval-form-0 env `(JUMP ,pc)))))
 
     (c8-with-forms-eval-0 (f lp collect)
@@ -340,12 +345,6 @@
     (let (c8-eval-let-0 env form))
     (target (setf (env-target env) (second form)) nil)
     (t (c8-apply-0 env (first form) (rest form)))))
-
-(defmacro c8-with-forms-eval-0 ((var list action) &body body)
-  `(loop for ,var in ,list
-         ,action (if (listp ,var)
-                 ,@body
-                 (error "'~a' is not a valid form" ,var))))
 
 (defun c8-eval-0 (env forms)
   (c8-with-forms-eval-0 (form forms append)
