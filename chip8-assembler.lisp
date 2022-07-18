@@ -108,7 +108,8 @@
 (defun builtin-func? (exp)
   (case exp
     ((mut def proc if then else \: loop
-          while include macro let target break)
+          while until include macro let target
+          placeholder)
      t)))
 
 (defun special-func? (exp)
@@ -271,20 +272,18 @@
   (let* ((pc (env-pc env))
          (lp (append (c8-with-forms-eval-0 (f body append)
                        (case (first f)
-                         (while
+                         ((while until)
                           (incf (env-pc env) 2) ;; make room for jump
-                          (list `(while ,@(first (c8-eval-form-0 env (rest f))))
-                                '(break))) ;; placeholder for jump
-                         (break
-                          (incf (env-pc env) 2) ;; make room for jump
-                          '((break)))           ;; placeholder for jump
+                          (list `(,(first f) ,@(first (c8-eval-form-0 env (rest f))))
+                                '(placeholder jump-to-end-loop)))
                          (t (c8-eval-form-0 env f))))
                      (c8-eval-form-0 env `(JUMP ,pc)))))
 
     (c8-with-forms-eval-0 (f lp collect)
       (match f
-        ((while _ _ _) (list (flip-test (second f)) (third f) (fourth f)))
-        ((break) `(JUMP ,(env-pc env)))
+        ((while _ _ _) (list* (flip-test (second f)) (nthcdr 2 f)))
+        ((until _ _ _) (list*            (second f)  (nthcdr 2 f)))
+        ((placeholder jump-to-end-loop) `(JUMP ,(env-pc env)))
         (_ f)))))
 
 (defun c8-eval-if-0 (env form)
@@ -298,11 +297,11 @@
                    (then
                     (when then-pc (error "Too many then statements in: ~a" form))
                     (setf then-pc (incf (env-pc env) 2)) ;; make room for jump
-                    '((then jump-to-else-if))) ;; placeholder for jump
+                    '((placeholder jump-to-else-if)))
                    (else
                     (when else-pc (error "Too many else statements in: ~a" form))
                     (setf else-pc (incf (env-pc env) 2)) ;; make room for jump
-                    `((else jump-to-end-if))) ;; placeholder for jump
+                    '((placeholder jump-to-end-if)))
                    (t (c8-eval-form-0 env f)))))
 
          (end-pc (env-pc env)))
@@ -314,15 +313,15 @@
           (error "There cannnot be any statements between the test and then statements in: ~a" form)))
     
     (when then-pc
-      (setf test (list (flip-test (first test)) (second test) (third test))))
+      (setf test (list* (flip-test (first test)) (rest test))))
     
     (cons test (c8-with-forms-eval-0 (f body collect)
                  (match f
-                   ((then jump-to-else-if)
+                   ((placeholder jump-to-else-if)
                     (if else-pc
                         `(JUMP ,else-pc)
                         `(JUMP ,end-pc)))
-                   ((else jump-to-end-if)
+                   ((placeholder jump-to-end-if)
                     `(JUMP ,end-pc))
                    (_ f))))))
 
