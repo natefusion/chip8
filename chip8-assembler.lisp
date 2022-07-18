@@ -263,38 +263,57 @@
 
 (defun c8-eval-loop-0 (env body)
   (let* ((pc (env-pc env))
-         (lp (append (c8-eval-0 env body)
+         (lp (append (c8-with-forms-eval-0 (f body append)
+                       (case (first f)
+                         (while
+                          (incf (env-pc env) 2)                 ;; make room for jump
+                          (append (c8-eval-form-0 env (list (flip-test (second f)) (third f) (fourth f)))
+                                  '((break jump-to-end-loop)))) ;; placeholder for jump
+                         (t (c8-eval-form-0 env f))))
                      (c8-eval-form-0 env `(JUMP ,pc)))))
 
-    (loop for form in lp
-          collect (match form
-                    ((break jump-to-end-loop) `(JUMP ,(env-pc env)))
-                    (_ form)))))
+    (c8-with-forms-eval-0 (f lp collect)
+      (if (equal '(break jump-to-end-loop) f)
+          `(JUMP ,(env-pc env))
+          f))))
 
 (defun c8-eval-if-0 (env form)
-  (let* ((then? (equal (fifth form) '(then)))
-         (test (list (if then? (flip-test (second form)) (second form))
-                     (third form) (fourth form))) 
-         (body (c8-eval-0 env (list* test (nthcdr 4 form))))
-         (else-pc (third (find 'jump-to-end-if body :key #'second))))
+  (let* ((test (first (c8-eval-form-0 env (list (second form) (third form) (fourth form)))))
+         (test-pc (env-pc env))
+         (then-pc nil)
+         (else-pc nil)
+         
+         (body (c8-with-forms-eval-0 (f (nthcdr 4 form) append)
+                 (case (first f)
+                   (then
+                    (when then-pc (error "Too many then statements in: ~a" form))
+                    (setf then-pc (incf (env-pc env) )) ;; make room for jump
+                    '((then jump-to-else-if)))          ;; placeholder for jump
+                   (else
+                    (when else-pc (error "Too many else statements in: ~a" form))
+                    (setf else-pc (incf (env-pc env) 2)) ;; make room for jump
+                    `((else jump-to-end-if)))            ;; placeholder for jump
+                   (t (c8-eval-form-0 env f)))))
 
-    (when (and (not then?)
-               (>= (length body) 4))
-      (error "If statements without then cannot have more than two statements~%: ~a" form))
+         (end-pc (env-pc env)))
 
-    (loop for f in body
-          collect (match f
-                    ((then jump-to-else-if)
-                     (if else-pc
-                         `(JUMP ,else-pc)
-                         `(JUMP ,(env-pc env))))
-                    
-                    ((else jump-to-end-if _)
-                     (if then?
-                         `(JUMP ,(env-pc env))
-                         (error "else without then in: ~a" form)))
-                    
-                    (_ f)))))
+    (if (null then-pc)
+        (cond (else-pc (error "Then without else in: ~a" form))
+              ((>= (length body) 3) (error "If statements without then or else cannot have more than one statement~%: ~a" form)))
+        (when (> (- then-pc test-pc) 4)
+          (error "There cannnot be any statements between the test and then statements in: ~a" form)))
+
+    
+    (cons (list (if then-pc (flip-test (first test)) (first test)) (second test) (third test))
+            (c8-with-forms-eval-0 (f body collect)
+              (match f
+                ((then jump-to-else-if)
+                 (if else-pc
+                     `(JUMP ,else-pc)
+                     `(JUMP ,end-pc)))
+                ((else jump-to-end-if)
+                 `(JUMP ,end-pc))
+                (_ f))))))
 
 (defun c8-eval-proc-0 (env name body)
   (c8-eval-label-0 env name)
@@ -307,34 +326,30 @@
           ((> main-label +START+) (append (c8-eval-form-0 env `(JUMP ,main-label)) forms))
           (t (error "Could not find main label")))))
 
-(defun c8-eval-while-0 (env test)
-  (append (c8-eval-form-0 env (list (flip-test (first test)) (second test) (third test)))
-          (c8-eval-form-0 env '(break))))
-
 (defun c8-eval-form-0 (env form)
-  (if (listp form)
-      (case (first form)
-        ((nil))
-        (mut (c8-eval-mut-0 env (second form) (third form)))
-        (def (c8-eval-def-0 env (second form) (third form)))
-        (proc (c8-eval-proc-0 env (second form) (cddr form)))
-        (if (c8-eval-if-0 env form))
-        (\: (c8-eval-label-0 env (cadr form) (cddr form)))
-        (loop (c8-eval-loop-0 env (rest form)))
-        (include (c8-eval-include-0 env (rest form)))
-        (macro (c8-eval-macro-0 env form))
-        (let (c8-eval-let-0 env form))
-        (then (incf (env-pc env) 2) '((then jump-to-else-if)))
-        (else (incf (env-pc env) 2) `((else jump-to-end-if ,(env-pc env))))
-        (break (incf (env-pc env) 2) '((break jump-to-end-loop)))
-        (while (c8-eval-while-0 env (rest form)))
-        (target (setf (env-target env) (second form)) nil)
-        (t (c8-apply-0 env (first form) (rest form))))
-      (error "'~a' is not a valid form" form)))
+  (case (first form)
+    ((nil))
+    (mut (c8-eval-mut-0 env (second form) (third form)))
+    (def (c8-eval-def-0 env (second form) (third form)))
+    (proc (c8-eval-proc-0 env (second form) (cddr form)))
+    (if (c8-eval-if-0 env form))
+    (\: (c8-eval-label-0 env (cadr form) (cddr form)))
+    (loop (c8-eval-loop-0 env (rest form)))
+    (include (c8-eval-include-0 env (rest form)))
+    (macro (c8-eval-macro-0 env form))
+    (let (c8-eval-let-0 env form))
+    (target (setf (env-target env) (second form)) nil)
+    (t (c8-apply-0 env (first form) (rest form)))))
+
+(defmacro c8-with-forms-eval-0 ((var list action) &body body)
+  `(loop for ,var in ,list
+         ,action (if (listp ,var)
+                 ,@body
+                 (error "'~a' is not a valid form" ,var))))
 
 (defun c8-eval-0 (env forms)
-  (loop for form in forms
-        append (c8-eval-form-0 env form)))
+  (c8-with-forms-eval-0 (form forms append)
+    (c8-eval-form-0 env form)))
 
 (defun c8-eval-program-0 (env forms)
   (c8-insert-main-0 env (c8-eval-0 env forms)))
