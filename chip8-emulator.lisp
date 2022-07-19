@@ -164,21 +164,14 @@
                       (aref v 2) (aref v 6) (aref v 10) (aref v 14)
                       (aref v 3) (aref v 7) (aref v 11) (aref v 15)
                       i pc dt st
-                      tickrate
-                      (dump (get-opcode mem (- pc 2)))
-                      (dump (get-opcode mem pc))
-                      (dump (get-opcode mem (+ pc 2)))))
+                      tickrate))
           (line (concatenate 'string
                              "V0: ~3D, V4: ~3D, V8: ~3D, VC: ~3D~%"
                              "V1: ~3D, V5: ~3D, V9: ~3D, VD: ~3D~%"
                              "V2: ~3D, V6: ~3D, VA: ~3D, VE: ~3D~%"
                              "V3: ~3D, V7: ~3D, VB: ~3D, VF: ~3D~%"
                              "~%I: ~3D~%PC: ~3D~%DT: ~3D~%ST: ~3D~%"
-                             "Tickrate: ~A~%"
-                             "Instruction:~%"
-                             "Prev: ~A~%"
-                             "Current: ~A~%"
-                             "Next: ~A")))
+                             "Tickrate: ~A~%")))
       ;; background
       (raylib:draw-rectangle (+ 0 (* +SCALE+ +W+)) 10 
                              (- *extra* 10) (- (* +SCALE+ +H+) 25)
