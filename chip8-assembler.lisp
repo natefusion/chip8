@@ -112,7 +112,7 @@
   (case exp
     ((mut def proc if then else \: loop
           while until include macro let target
-          placeholder)
+          placeholder begin end)
      t)))
 
 (defun special-func? (exp)
