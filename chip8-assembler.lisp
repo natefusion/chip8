@@ -1,20 +1,25 @@
 (defmacro if-let (spec then &optional else)
   `(let (,spec) (if ,(car spec) ,then ,else)))
 
-(defun c8-replace (ch)
-  (case ch
-    (#\, ")(")
-    (#\; "\\;")
-    (#\: "\\:")
-    (#\| "|\\||")
-    (#\[ "(")
-    (#\] ")")
-    (t (string ch))))
+(defun replace-all (new old target-string)
+  ;; third party libraries be damned!!!!
+  (loop with len = (length target-string)
+        for x below len
+        collect (loop for o in old
+                      for n in new
+                      for y = (+ x (length o))
+                      for slice = (subseq target-string x (when (< y len) y))
+                      when (string-equal slice o)
+                        do (incf x (1- (length o)))
+                        and return n
+                      finally (return (string (char target-string x))))
+          into f
+        finally (return (apply #'concatenate 'string f))))
 
 (defun make-sexp (line)
-  (let ((line (apply #'concatenate 'string
-                     (map 'list #'c8-replace line))))
-    
+  (let ((line (replace-all '(")(" "\\:" "|\\||" "(" ")" "("     ")")
+                           '(","  ":"   "|"     "[" "]" "begin" "end")
+                           line)))
     (case (char line 0)
       (#\( line)
       (#\. (substitute #\  #\. line :end 1 :test #'char=))
