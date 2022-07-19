@@ -111,7 +111,7 @@
 
 (defun builtin-func? (exp)
   (case exp
-    ((mut def proc if then else \: loop
+    ((mut def proc if then else \: label loop
           while until include macro let target
           placeholder begin end)
      t)))
@@ -347,7 +347,7 @@
     (def (c8-eval-def-0 env (second form) (third form)))
     (proc (c8-eval-proc-0 env (second form) (cddr form)))
     (if (c8-eval-if-0 env form))
-    (\: (c8-eval-label-0 env (cadr form) (cddr form)))
+    ((label \:) (c8-eval-label-0 env (cadr form) (cddr form)))
     (loop (c8-eval-loop-0 env (rest form)))
     (include (c8-eval-include-0 env (rest form)))
     (macro (c8-eval-macro-0 env form))
