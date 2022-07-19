@@ -13,9 +13,11 @@
 
 (defun make-sexp (line)
   (let ((line (apply #'concatenate 'string
-                     (map 'list #'c8-replace line))))
-    (cond ((string-equal line "begin") "(")
-          ((string-equal line "end") ")")
+                     (map 'list #'c8-replace line)))
+        (subseq-safe (lambda (sequence end)
+                       (subseq sequence 0 (when (< end (length sequence)) end)))))
+    (cond ((string-equal (funcall subseq-safe line 5) "begin") "(")
+          ((string-equal (funcall subseq-safe line 3) "end") ")")
           (t (case (char line 0)
                ((#\( #\)) line)
                (#\; (substitute #\  #\; line :end 1 :test #'char=))
