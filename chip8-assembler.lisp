@@ -5,6 +5,7 @@
   (case ch
     (#\, ")(")
     (#\: "\\:")
+    (#\| "|\\||")
     (#\[ "(")
     (#\] ")")
     (#\. ")")
@@ -17,9 +18,10 @@
                        (subseq sequence 0 (when (< end (length sequence)) end)))))
     (cond ((string-equal (funcall subseq-safe line 5) "begin") "(")
           ((string-equal (funcall subseq-safe line 3) "end") ")")
+          ((string-equal (funcall subseq-safe line 4) "|\\||" )
+           (concatenate 'string " " (subseq line 4)))
           (t (case (char line 0)
                ((#\( #\)) line)
-               (#\| (substitute #\  #\| line :end 1 :test #'char=))
                (t (concatenate 'string "(" line)))))))
 
 (defun remove-comment (line)
