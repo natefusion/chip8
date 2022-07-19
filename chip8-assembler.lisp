@@ -1,29 +1,25 @@
 (defmacro if-let (spec then &optional else)
   `(let (,spec) (if ,(car spec) ,then ,else)))
 
-(defun replace-all (new old target-string)
-  ;; third party libraries be damned!!!!
-  (loop with len = (length target-string)
-        for x below len
-        collect (loop for o in old
-                      for n in new
-                      for y = (+ x (length o))
-                      for slice = (subseq target-string x (when (< y len) y))
-                      when (string-equal slice o)
-                        do (incf x (1- (length o)))
-                        and return n
-                      finally (return (string (char target-string x))))
-          into f
-        finally (return (apply #'concatenate 'string f))))
+(defun c8-replace (ch)
+  (case ch
+    (#\, ")(")
+    (#\: "\\:")
+    (#\| "|\\||")
+    (#\[ "(")
+    (#\] ")")
+    (#\. ")")
+    (t (string ch))))
 
 (defun make-sexp (line)
-  (let ((line (replace-all '(")(" "\\:" "|\\||" "(" ")" "("     ")"   ")")
-                           '(","  ":"   "|"     "[" "]" "begin" "end" ".")
-                           line)))
-    (case (char line 0)
-      ((#\( #\)) line)
-      (#\; (substitute #\  #\; line :end 1 :test #'char=))
-      (t (concatenate 'string "(" line)))))
+  (let ((line (apply #'concatenate 'string
+                     (map 'list #'c8-replace line))))
+    (cond ((string-equal line "begin") "(")
+          ((string-equal line "end") ")")
+          (t (case (char line 0)
+               ((#\( #\)) line)
+               (#\; (substitute #\  #\; line :end 1 :test #'char=))
+               (t (concatenate 'string "(" line)))))))
 
 (defun remove-comment (line)
   (subseq line 0 (position-if (lambda (x) (case x ((#\' #\") t))) line)))
