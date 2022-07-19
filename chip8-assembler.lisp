@@ -5,7 +5,6 @@
   (case ch
     (#\, ")(")
     (#\: "\\:")
-    (#\| "|\\||")
     (#\[ "(")
     (#\] ")")
     (#\. ")")
@@ -20,7 +19,7 @@
           ((string-equal (funcall subseq-safe line 3) "end") ")")
           (t (case (char line 0)
                ((#\( #\)) line)
-               (#\; (substitute #\  #\; line :end 1 :test #'char=))
+               (#\| (substitute #\  #\| line :end 1 :test #'char=))
                (t (concatenate 'string "(" line)))))))
 
 (defun remove-comment (line)
