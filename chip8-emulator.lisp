@@ -3,6 +3,7 @@
 
 (defparameter +W+     64)
 (defparameter +H+     32)
+(defparameter *extra* 520)
 (defparameter +SCALE+ 20)
 (defparameter +MEM+   #x1000)
 ;; (defconstant +START+ #x200)
@@ -35,8 +36,10 @@
     
     (when game
       (loop for i from +START+ below (length mem)
-            for j below (length game)
-            do (setf (aref mem i) (aref game j))))))
+            for j from 0
+            do (if (< j (length game))
+                   (setf (aref mem i) (aref game j))
+                   (setf (aref mem i) 0))))))
 
 (defstruct chip8
   (opcode 0 :type u16)
@@ -53,6 +56,30 @@
   (waiting nil :type boolean)
   (tickrate 20)
   (keys (chip8-array 16 :type 'bit)))
+
+(defun reset-gfx (chip)
+  (dotimes (i (array-total-size (chip8-gfx chip)))
+    (setf (row-major-aref (chip8-gfx chip) i) 0)))
+
+(defun chip8-reset (chip game)
+  (with-slots (opcode mem v i pc dt st stack sp gfx draw-flag waiting tickrate keys) chip
+    (dotimes (x 16)
+      (setf (aref v x) 0
+            (aref stack x) 0
+            (aref keys x) 0))
+    
+    (reset-gfx chip)
+    
+    (setf opcode 0
+          i 0
+          pc +START+
+          dt 0
+          st 0
+          sp 0
+          draw-flag nil
+          waiting nil
+          tickrate 20)
+    (set-mem chip :game game)))
 
 (defun get-opcode (mem pc)
   (dpb (aref mem pc) (byte 8 8) (aref mem (1+ pc))))
@@ -74,8 +101,7 @@
       (incf pc 2)
       
       (match (list w x y n)
-        ((0 0 #xE #x0) (dotimes (i (array-total-size gfx))
-                         (setf (row-major-aref gfx i) 0)))
+        ((0 0 #xE #x0) (reset-gfx chip8))
         
         ((0 0 #xE #xE) (setf pc (aref stack sp)
                              sp (1- sp)))
@@ -170,8 +196,10 @@
                              "V1: ~3D, V5: ~3D, V9: ~3D, VD: ~3D~%"
                              "V2: ~3D, V6: ~3D, VA: ~3D, VE: ~3D~%"
                              "V3: ~3D, V7: ~3D, VB: ~3D, VF: ~3D~%"
-                             "~%I: ~3D~%PC: ~3D~%DT: ~3D~%ST: ~3D~%"
-                             "Tickrate: ~A~%")))
+                             "I: ~3D~%PC: ~3D~%DT: ~3D~%ST: ~3D~%"
+                             "Tickrate: ~A~%"
+                             "* Press 'L' to reset game state~%~t and reload game from disk"
+                             "~%* Press and hold 'P'~%~t to pause the game")))
       ;; background
       (raylib:draw-rectangle (+ 0 (* +SCALE+ +W+)) 10 
                              (- *extra* 10) (- (* +SCALE+ +H+) 25)
@@ -223,7 +251,7 @@
     (when (> st 0) (decf st))
     (when (> dt 0) (decf dt))))
 
-(defparameter *extra* 520)
+
 
 (defun c8-load (filename)
   (with-open-file (f filename :element-type 'unsigned-byte)
@@ -242,15 +270,17 @@
     (set-mem chip :game (cond (code (c8-compile code))
                               (binary (c8-load binary))
                               (t (error "wowee enter code or binary pls")))
-                  :font +FONT+)
+             :font +FONT+)
     (raylib:with-window ((+ *extra* (* +SCALE+ +W+)) (* +SCALE+ +H+) (format nil "chip8 emulator | ~A" (if code code binary)))
-      (raylib:set-target-fps 60)
-      (loop until (raylib:window-should-close)
-            ;; GOTCHA: raylib craps itself if with-drawing is not called
-            do (raylib:with-drawing
-                 (if (raylib:is-key-down raylib:+key-p+)
-                     (draw-frame chip)
-                     (idle-loop chip)))))))
+                        (raylib:set-target-fps 60)
+                        (loop until (raylib:window-should-close)
+                              ;; GOTCHA: raylib craps itself if with-drawing is not called
+                              do (raylib:with-drawing
+                                     (when (raylib:is-key-down raylib:+key-l+)
+                                       (chip8-reset chip (if code (c8-compile code) (c8-load binary))))
+                                     (if (raylib:is-key-down raylib:+key-p+)
+                                         (draw-frame chip)
+                                         (idle-loop chip)))))))
 
 (defun main ()
   (let ((command (second *posix-argv*))
