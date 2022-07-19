@@ -17,16 +17,16 @@
         finally (return (apply #'concatenate 'string f))))
 
 (defun make-sexp (line)
-  (let ((line (replace-all '(")(" "\\:" "|\\||" "(" ")" "("     ")")
-                           '(","  ":"   "|"     "[" "]" "begin" "end")
+  (let ((line (replace-all '(")(" "\\:" "|\\||" "(" ")" "("     ")"   ")")
+                           '(","  ":"   "|"     "[" "]" "begin" "end" ".")
                            line)))
     (case (char line 0)
-      (#\( line)
-      (#\. (substitute #\  #\. line :end 1 :test #'char=))
-      (t (concatenate 'string "(" line ")")))))
+      ((#\( #\)) line)
+      (#\; (substitute #\  #\; line :end 1 :test #'char=))
+      (t (concatenate 'string "(" line)))))
 
 (defun remove-comment (line)
-  (subseq line 0 (position #\; line :test #'char=)))
+  (subseq line 0 (position-if (lambda (x) (case x ((#\' #\") t))) line)))
 
 (defun parse (filename)
   (with-open-file (f filename)
