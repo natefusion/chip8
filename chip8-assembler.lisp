@@ -4,12 +4,13 @@
 (defun make-sexp (line)
   (let* ((colon nil)
          (bang nil)
+         (bar nil)
          (chars (map 'list
                      (lambda (ch)
                        (case ch
                          (#\, ")(")
-                         (#\: (prog1 "" (setf colon t)))
-                         (#\| "|\\||")
+                         (#\: (prog1 " " (setf colon t)))
+                         (#\| (prog1 " " (setf bar t)))
                          (#\[ "(")
                          (#\] ")")
                          (#\; ")")
@@ -18,9 +19,10 @@
                      line))
          (line (apply #'concatenate 'string chars)))
     (when bang (setf colon nil))
-    (cond ((and (>= (length line) 4) (string-equal line "|\\||" :end1 4))
-           (concatenate 'string " " (subseq line 4)))
-          (t (concatenate 'string "(" line (if colon "" ")"))))))
+    (concatenate 'string
+                 (if bar " " "(")
+                 line
+                 (if (or colon bar) " " ")"))))
 
 (defun remove-comment (line)
   (subseq line 0 (position-if (lambda (x) (case x ((#\' #\") t))) line)))
