@@ -2,13 +2,13 @@ def px v1
 def py v2
 
 label up #x70: "colon means don't put a close parenthesis at the end of a line
-        |#x70 " vertical bar means do not put any implicit parentheses
-        |#x20
-        |#x70
-        #xA8| ' the vertical bar can go anywhere in the line
-        |#x20
-        |#x50
-        |#x50; " semicolons are an alias for close a parenthesis
+        $#x70 " dollar sign means do not put any implicit parentheses
+        $#x20
+        $#x70
+        #xA8$ ' the dollar sign can go anywhere in the line
+        $#x20
+        $#x50
+        $#x50; " semicolons are an alias for close a parenthesis
 
 " labels can be defined with the label keyword
 label down
