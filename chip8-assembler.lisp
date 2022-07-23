@@ -1,28 +1,26 @@
 (defmacro if-let (spec then &optional else)
   `(let (,spec) (if ,(car spec) ,then ,else)))
 
-(defun c8-replace (ch)
-  (case ch
-    (#\, ")(")
-    (#\: "\\:")
-    (#\| "|\\||")
-    (#\[ "(")
-    (#\] ")")
-    (#\. ")")
-    (t (string ch))))
-
 (defun make-sexp (line)
-  (let ((line (apply #'concatenate 'string
-                     (map 'list #'c8-replace line)))
-        (subseq-safe (lambda (sequence end)
-                       (subseq sequence 0 (when (< end (length sequence)) end)))))
-    (cond ((string-equal (funcall subseq-safe line 5) "begin") "(")
-          ((string-equal (funcall subseq-safe line 3) "end") ")")
-          ((string-equal (funcall subseq-safe line 4) "|\\||" )
+  (let* ((colon nil)
+         (bang nil)
+         (chars (map 'list
+                     (lambda (ch)
+                       (case ch
+                         (#\, ")(")
+                         (#\: (prog1 "" (setf colon t)))
+                         (#\| "|\\||")
+                         (#\[ "(")
+                         (#\] ")")
+                         (#\; ")")
+                         (#\! (prog1 "(" (setf bang t)))
+                         (t (string ch))))
+                     line))
+         (line (apply #'concatenate 'string chars)))
+    (when bang (setf colon nil))
+    (cond ((and (>= (length line) 4) (string-equal line "|\\||" :end1 4))
            (concatenate 'string " " (subseq line 4)))
-          (t (case (char line 0)
-               ((#\( #\)) line)
-               (t (concatenate 'string "(" line)))))))
+          (t (concatenate 'string "(" line (if colon "" ")"))))))
 
 (defun remove-comment (line)
   (subseq line 0 (position-if (lambda (x) (case x ((#\' #\") t))) line)))
@@ -111,7 +109,7 @@
 
 (defun builtin-func? (exp)
   (case exp
-    ((mut def proc if then else \: label loop
+    ((mut def proc if then else label loop
           while until include macro let target
           placeholder begin end)
      t)))
@@ -347,7 +345,7 @@
     (def (c8-eval-def-0 env (second form) (third form)))
     (proc (c8-eval-proc-0 env (second form) (cddr form)))
     (if (c8-eval-if-0 env form))
-    ((label \:) (c8-eval-label-0 env (cadr form) (cddr form)))
+    ((label) (c8-eval-label-0 env (cadr form) (cddr form)))
     (loop (c8-eval-loop-0 env (rest form)))
     (include (c8-eval-include-0 env (rest form)))
     (macro (c8-eval-macro-0 env form))

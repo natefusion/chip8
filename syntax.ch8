@@ -1,76 +1,71 @@
-def px v1.
-def py v2.
+def px v1
+def py v2
 
-label up #x70
-        |#x70 " | is used to continue a line
+label up #x70: "colon means don't put a close parenthesis at the end of a line
+        |#x70 " vertical bar means do not put any implicit parentheses
         |#x20
         |#x70
         |#xA8
         |#x20
         |#x50
-        |#x50. ' . can used to end a statement
+        |#x50; " semicolons are an alias for close a parenthesis
 
-" labels can be defined with : or label
-: down.
-include #x50 #x50 #x20 #xA8 #x70 #x20 #x70 #x70.
+" labels can be defined with the label keyword
+label down
+include #x50 #x50 #x20 #xA8 #x70 #x20 #x70 #x70
 
-proc if-w-pressed
-  set i up.
-  add py #xFF.
-end you can put anything you want after 'end'. 'begin' as well.
+proc if-w-pressed:
+  set i up
+  add py #xFF;
 
-proc if-s-pressed
-  set i down.
-  add py 1.
-end
+
+proc if-s-pressed:
+  set i down
+  add py 1;
   
-macro if-a-pressed (X)
-  set i up.
-  add px X.
-end
+macro if-a-pressed ! X ' bang means put an open parenthesis
+  set i up             ' at the bang and a close parenthesis
+  add px #xFF;         ' at the end of a line
 
-' this is a comment
-proc main
-  set px rand #b0011111.
-  set py rand #b0001111.
-  set i up.
-  draw px py 8.
 
-  loop
-    draw px py 8.
+proc main:
+  set px rand #b0011111
+  set py rand #b0001111
+  set i up
+  draw px py 8
 
-    set v0 KEY-W , eq v0 key.
-    call if-w-pressed.
+  loop:
+    draw px py 8
 
-    " You can of course use s-expressions directly
-    [set v0 KEY-S]
+    ' comma is an alias for ')('
+    ' it is useful for writing multiple statements
+    ' on the same line
+    set v0 KEY-W , eq v0 key
+    call if-w-pressed
+
+    set v0 KEY-S
     
-    if eq v0 key
-      call if-s-pressed.
-    end
+    ' the colon can be placed anywhere in the line
+    :if eq v0 key
+      call if-s-pressed;
 
-    set v0 KEY-A.
-    if eq v0 key
-     then.
-      if-a-pressed #xFF.
-    end
+    set v0 KEY-A
+    if eq v0 key:
+     then
+      if-a-pressed #xFF;
 
-    set v0 KEY-D.
-    eq v0 key, call if-d-pressed.
+    set v0 KEY-D
+    eq v0 key, call if-d-pressed
 
-    draw px py 8.
+    draw px py 8
 
-    loop
-      set ve dt.
-      neq ve 0.
-    end
+    loop:
+      set ve dt
+      neq ve 0;
 
-    set ve 3.
-    set dt ve.
-  end loop
-end main
+    set ve 3
+    set dt ve;;
 
-proc if-d-pressed
-  set i up.
-  add px 1.
-end 
+proc if-d-pressed:
+  set i up
+  add px 1;
