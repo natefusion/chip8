@@ -239,6 +239,12 @@
                 (return (prog1 (c8-eval-0 env (cddr form))
                           (pop (env-local-values env))))))
 
+(defun c8-macroexpand-body-0 (env forms)
+  (c8-with-forms-eval-0 (form forms collect)
+    (let ((func (cdr (assoc-local (first form) (env-local-macros env))))
+          (args (loop for arg in (rest form) collect (c8-eval-arg-0 env arg))))
+      (list* (if func func (first form)) args))))
+
 (defun c8-macroexpand-0 (env name macro args)
   (loop for key in (macro-parameters macro)
         for datum in args
@@ -249,7 +255,7 @@
         finally (push name (env-context env))
                 (push local-macros (env-local-macros env))
                 (push local-values (env-local-values env))
-                (return (prog1 (c8-eval-0 env (macro-body macro))
+                (return (prog1 (c8-macroexpand-body-0 env (macro-body macro))
                           (pop (env-context env))
                           (pop (env-local-macros env))
                           (pop (env-local-values env))))))
