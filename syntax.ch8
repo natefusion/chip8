@@ -16,17 +16,18 @@ include #x50 #x50 #x20 #xA8 #x70 #x20 #x70 #x70
 
 proc if-w-pressed:
   set i up
-  add py #xFF;
-
+  add py #xFF
+end;
 
 proc if-s-pressed:
   set i down
-  add py 1;
+  add py 1
+end;
   
 macro if-a-pressed ! X ' bang means put an open parenthesis
   set i up             ' at the bang and a close parenthesis
-  add px #xFF;         ' at the end of a line
-
+  add px #xFF          ' at the end of a line
+end;
 
 proc main:
   set px rand #b0011111
@@ -61,11 +62,39 @@ proc main:
 
     loop:
       set ve dt
-      neq ve 0;
+      neq ve 0
+    end;
 
     set ve 3
-    set dt ve;;
+    set dt ve
+  end;
+end;  ' use end; when ending a scope on a newline
 
 proc if-d-pressed:
   set i up
-  add px 1;
+  add px 1
+end;
+
+' macros can be defined anywhere
+' macros can have types.
+
+' the 'atom' type passes the given argument literally.
+' the label builtin will check the for any defined atoms when making a label
+' the atom type can also be used to pass macro names
+
+' the body type must be the last argument.
+' a grouping of statements will be bound to body
+
+macro my-proc ! [name atom] [b body]
+  label name
+  b
+end;
+
+' my-proc just-a-test:
+'   draw v1 v2 8
+'   draw v1 v2 8
+' ret;
+
+' NOTE: while you can use this macro.
+' the pc generated from the label will be wrong (at the time of writing)
+' this should get fixed in the upcoming rewrite

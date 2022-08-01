@@ -1,7 +1,12 @@
 (defmacro if-let (spec then &optional else)
   `(let (,spec) (if ,(car spec) ,then ,else)))
 
-(defun make-sexp (line)
+;; I WILL have type checking and I WILL like it
+(defmacro defun* (name lambda-list lambda-list-types return-type &body body)
+  `(progn (declaim (ftype (function ,lambda-list-types ,return-type) ,name))
+          (defun ,name ,lambda-list ,@body)))
+
+(defun* make-sexp (line) (string) string
   (let* ((colon nil)
          (bang nil)
          (dollar nil)
@@ -25,14 +30,13 @@
                  line
                  (if (or colon dollar) " " ")"))))
 
-(defun remove-comment (line)
+(defun* remove-comment (line) (string) string
   (subseq line 0 (position-if (lambda (x) (case x ((#\' #\") t))) line)))
 
-(defun parse (filename)
+(defun* parse (filename) (string) list
   (with-open-file (f filename)
-    (loop for line = (read-line f nil)
+    (loop for line = (read-line f nil) while line
           for trimmed = (string-trim " " (remove-comment line))
-          while line
           unless (uiop:emptyp trimmed)
             collect (make-sexp trimmed) into final
           finally (return (read-from-string (apply #'concatenate 'string
@@ -47,30 +51,52 @@
                             (every ,#'ekual ',(car clause) ,pattern))
                           (funcall ,#'ekual ',(car clause) ,pattern)))))))
 
-(defun chop (number size &optional (pos 0))
+(defun* chop (number size &optional (pos 0)) (integer integer &optional integer) integer
   (ldb (byte size pos) number))
 
-(defparameter +BUILTIN-VALUES+
-  `((KEY-1 . #x1)
-    (KEY-2 . #x2)
-    (KEY-3 . #x3)
-    (KEY-4 . #xC)
-    (KEY-Q . #x4)
-    (KEY-W . #x5)
-    (KEY-E . #x6)
-    (KEY-R . #xD)
-    (KEY-A . #x7)
-    (KEY-S . #x8)
-    (KEY-D . #x9)
-    (KEY-F . #xE)
-    (KEY-Z . #xA)
-    (KEY-X . #x0)
-    (KEY-C . #xB)
-    (KEY-V . #xF)
-    (PI . ,PI)
-    (E  . ,(exp 1))))
+(defstruct value data type)
 
-(defstruct macro (calls 0) parameters body)
+(defparameter +BUILTIN-VALUES+
+  `((KEY-1 . ,(make-value :data #x1 :type 'i4)) 
+    (KEY-2 . ,(make-value :data #x2 :type 'i4)) 
+    (KEY-3 . ,(make-value :data #x3 :type 'i4)) 
+    (KEY-4 . ,(make-value :data #xC :type 'i4)) 
+    (KEY-Q . ,(make-value :data #x4 :type 'i4)) 
+    (KEY-W . ,(make-value :data #x5 :type 'i4)) 
+    (KEY-E . ,(make-value :data #x6 :type 'i4)) 
+    (KEY-R . ,(make-value :data #xD :type 'i4)) 
+    (KEY-A . ,(make-value :data #x7 :type 'i4)) 
+    (KEY-S . ,(make-value :data #x8 :type 'i4)) 
+    (KEY-D . ,(make-value :data #x9 :type 'i4)) 
+    (KEY-F . ,(make-value :data #xE :type 'i4)) 
+    (KEY-Z . ,(make-value :data #xA :type 'i4)) 
+    (KEY-X . ,(make-value :data #x0 :type 'i4)) 
+    (KEY-C . ,(make-value :data #xB :type 'i4)) 
+    (KEY-V . ,(make-value :data #xF :type 'i4)) 
+    (PI . ,(make-value :data PI      :type 'float))
+    (E  . ,(make-value :data (exp 1) :type 'float))
+    ;; @HACK the data should be a number but it isn't 
+    (V0 . ,(make-value :data 'V0 :type 'V0)) 
+    (V1 . ,(make-value :data 'V1 :type 'V1)) 
+    (V2 . ,(make-value :data 'V2 :type 'V2)) 
+    (V3 . ,(make-value :data 'V3 :type 'V3)) 
+    (V4 . ,(make-value :data 'V4 :type 'V4)) 
+    (V5 . ,(make-value :data 'V5 :type 'V5)) 
+    (V6 . ,(make-value :data 'V6 :type 'V6)) 
+    (V7 . ,(make-value :data 'V7 :type 'V7)) 
+    (V8 . ,(make-value :data 'V8 :type 'V8)) 
+    (V9 . ,(make-value :data 'V9 :type 'V9)) 
+    (VA . ,(make-value :data 'VA :type 'VA)) 
+    (VB . ,(make-value :data 'VB :type 'VB)) 
+    (VC . ,(make-value :data 'VC :type 'VC)) 
+    (VD . ,(make-value :data 'VD :type 'VD)) 
+    (VE . ,(make-value :data 'VE :type 'VE)) 
+    (VF . ,(make-value :data 'VF :type 'VF))))
+
+(defstruct macro
+  (calls 0 :type integer)
+  (parameters nil :type list)
+  (body nil :type list))
 
 (defun mk-macro (parameters body)
   (make-macro :parameters (list* 'calls parameters) :body body))
@@ -100,7 +126,7 @@
 (defparameter +MAX-SIZE+ (- #x10000 +START+))
 (defparameter +OFFSET+ 2)
 
-(defun instruction? (exp)
+(defun* instruction? (exp) (t) boolean
   (case exp
     ((EQ NEQ SET ADD OR AND XOR SUB
          SHR SUBN SHL DRAW BCD WRITE
@@ -110,29 +136,29 @@
          SCROLL-UP PLANE AUDIO)
      t)))
 
-(defun builtin-func? (exp)
+(defun* builtin-func? (exp) (t) boolean
   (case exp
-    ((mut def proc if then else label loop
+    ((mut def proc end if then else label loop
           while until include macro let target
           placeholder begin end)
      t)))
 
-(defun special-func? (exp)
+(defun* special-func? (exp) (t) boolean
   (or (instruction? exp) (builtin-func? exp)))
 
-(defun v-reg? (exp)
+(defun* v-reg? (exp) (t) (values (or number null) &optional)
   (case exp
     (v0 0) (v1 1) (v2 2) (v3 3)
     (v4 4) (v5 5) (v6 6) (v7 7)
     (v8 8) (v9 9) (va #xa) (vb #xb)
     (vc #xc) (vd #xd) (ve #xe) (vf #xf)))
 
-(defun fake? (exp)
+(defun* fake? (exp) (t) boolean
   (case exp ((KEY DT ST I HEX BIGHEX LONG RAND) t)))
 
-(defun special-val? (exp)
-  (or (v-reg? exp) (fake? exp)
-      (eq exp 'pc)))
+(defun* special-val? (exp) (t) boolean
+  (not (null (or (v-reg? exp) (fake? exp)
+                 (eq exp 'pc)))))
 
 (defstruct env
   (output (make-array +MAX-SIZE+ :element-type '(unsigned-byte 8) :fill-pointer 0))
@@ -144,7 +170,8 @@
   (values (copy-alist +BUILTIN-VALUES+))
   mutables
   labels
-  local-macros
+  local-bodies
+  local-atoms
   (macros (copy-alist +BUILTIN-MACROS+)))
 
 (defun assoc-local (item alists)
@@ -152,51 +179,58 @@
         for x = (assoc item scope)
         when x return x))
 
-(declaim (ftype function c8-eval-arg-0 c8-eval-0 c8-eval-form-0))
-
 (defmacro c8-with-forms-eval-0 ((var list action) &body body)
   `(loop for ,var in ,list
          ,action (if (listp ,var)
                  ,@body
                  (error "'~a' is not a valid form" ,var))))
 
-(defun c8-eval-arg-0 (env arg)
+(defun* c8-eval-arg-0 (env arg) (env t) t
   (if (listp arg)
       (list* (first arg) (loop for a in (rest arg) collect (c8-eval-arg-0 env a)))
       (let ((local (cdr (assoc-local arg (env-local-values env))))
+            (atom (cdr (assoc-local arg (env-local-atoms env))))
             (val (cdr (assoc arg (env-values env))))
             (mut (cdr (assoc arg (env-mutables env)))))
-        (cond (local local)
-              (mut mut)
-              (val val)
-              ((eq arg 'pc) (env-pc env))
-              (t arg)))))
+        (flet ((get-data (x) (if (value-p x) (value-data x) x)))
+          (cond (local (get-data local))
+                (atom (get-data atom))
+                (mut (get-data mut))
+                (val (get-data val))
+                ((eq arg 'pc) (env-pc env))
+                (t arg))))))
 
-(defun c8-eval-include-0 (env numbers)
+(defun* c8-eval-include-0 (env numbers) (env list) list
   (loop for n in numbers
         collect (c8-eval-arg-0 env n) into f
         do (incf (env-pc env))
         finally (return (list `(include ,@f)))))
 
-(defun c8-check-main-0 (env name)
+(defun* c8-check-main-0 (env name) (env atom) null
   (with-slots (pc main-label) env
     (when (eq name 'main)
       (when (= pc (+ +START+ +OFFSET+))
         (setf pc +START+))
-      (setf main-label pc))))
+      (setf main-label pc))
+    nil))
 
-(defun c8-eval-label-0 (env name &optional numbers)
+(defun* c8-eval-label-0
+    (env name &optional numbers)
+    (env atom &optional list) list
   (when (null name) (error "Label not given a name"))
   (when (or (assoc name (env-labels env))
             (assoc name (env-mutables env))
             (assoc name (env-values env))
             (special-val? name))
     (error "Redefinition of ~a" name))
-  (c8-check-main-0 env name)
-  (push (cons name (env-pc env)) (env-labels env))
+  (let ((actual-name (if-let (x (cdr (assoc-local name (env-local-atoms env))))
+                       (value-data x)
+                       name)))
+    (c8-check-main-0 env actual-name)
+    (push (cons actual-name (env-pc env)) (env-labels env)))
   (when numbers (c8-eval-include-0 env numbers)))
 
-(defun c8-eval-mut-0 (env name value)
+(defun* c8-eval-mut-0 (env name value) (env atom atom) null
   (when (null value) (error "'def ~a' was not initialized" name))
   (when (or (assoc name (env-values env))
             (assoc name (env-labels env))
@@ -208,13 +242,25 @@
       (push (cons name (c8-eval-arg-0 env value)) (env-mutables env)))
   nil)
 
-(defun c8-eval-def-0 (env name value)
+(defun infer-type-0 (value)
+  (cond ((value-p value) (value-type value))
+        ((listp value) 'body)
+        ((numberp value)
+         (cond ((<= value #xF) 'i4)
+               ((<= value #xFF) 'i8)
+               ((<= value #xFFF) 'i12)
+               ((<= value #xFFFF) 'i16)))
+        ((v-reg? value) 'v*)
+        (t 'atom)))
+
+(defun* c8-eval-def-0 (env name value) (env atom atom) null
   (when (null value) (error "'def ~a' was not initialized" name))
   (when (or (assoc name (env-values env))
             (assoc name (env-mutables env))
             (assoc name (env-labels env))
             (special-val? name))
     (error "Redefinition of ~a" name))
+
   (push (cons name (c8-eval-arg-0 env value)) (env-values env))
   nil)
 
@@ -239,39 +285,94 @@
                 (return (prog1 (c8-eval-0 env (cddr form))
                           (pop (env-local-values env))))))
 
-(defun c8-macroexpand-body-0 (env forms)
-  (c8-with-forms-eval-0 (form forms collect)
-    (let ((func (cdr (assoc-local (first form) (env-local-macros env))))
-          (args (loop for arg in (rest form) collect (c8-eval-arg-0 env arg))))
-      (list* (if func func (first form)) args))))
+;; (defun c8-macroexpand-body-0 (env forms)
+;;   (c8-with-forms-eval-0 (form forms collect)
+;;     (let ((func (cdr (assoc-local (first form) (env-local-macros env))))
+;;           (args (loop for arg in (rest form) collect (c8-eval-arg-0 env arg))))
+;;       (list* (if func func (first form)) args))))
+
+(defun c8-check-type-0 (env name value type)
+  (typecase (first value)
+    (atom (if (null type)
+              nil
+              (let* ((e-value (c8-eval-arg-0 env (first value)))
+                     (inferred (infer-type-0 e-value)))
+                (if (eq inferred (if (v-reg? type) 'v* type))
+                    (values inferred e-value)
+                    (error "Value '~a' = '~a' has type '~a' but was given type '~a'"
+                           name (first value) inferred type)))))
+    (t (if (eq type 'body)
+           (values 'body value)
+              (error "Value '~a' = '~a' has type '~a' but was given type '~a'"
+                     name value 'body type)))))
 
 (defun c8-macroexpand-0 (env name macro args)
-  (loop for key in (macro-parameters macro)
-        for datum in args
-        if (listp key)
-          collect (cons (first key) datum) into local-macros
-        else
-          collect (cons key (c8-eval-arg-0 env datum)) into local-values
-        finally (push name (env-context env))
-                (push local-macros (env-local-macros env))
-                (push local-values (env-local-values env))
-                (return (prog1 (c8-eval-0 env
-                                (c8-macroexpand-body-0 env (macro-body macro)))
-                          (pop (env-context env))
-                          (pop (env-local-macros env))
-                          (pop (env-local-values env))))))
+  (let (local-atoms local-values body)
+    (loop for key in (macro-parameters macro)
+          for index from 0
+          for val = args then (cdr val)
+          
+          do (if (listp key)
+                 (if (> (length key) 2)
+                     (error "bad parameter in the macro named ~a~%~a" name key)
+                     (let* ((pname (first key))
+                            (type (second key)))
+                       
+                       (multiple-value-bind (checked-type e-data) (c8-check-type-0 env pname val type)
+                         (case checked-type
+                           (body
+                            (when (< index (1- (length (macro-parameters macro))))
+                              (error "parameters of type body must be last. In macro ~a" name))
+                            (push (cons pname e-data) body) (return))
+                           
+                           (t
+                            (case checked-type
+                              ((nil))   ; no type means ignore   
+                              (atom (push (cons pname (make-value :data e-data :type type)) local-atoms))
+                              (t (push (cons pname (make-value :data e-data :type type)) local-values))))))))
+
+                 (let ((pname key)
+                       (data (c8-eval-arg-0 env (first val))))
+                   (push (cons pname (make-value :data data :type (infer-type-0 data))) local-values))))
+    
+    (push name (env-context env))
+    (push body (env-local-bodies env))
+    (push local-values (env-local-values env))
+    (push local-atoms (env-local-atoms env))
+
+    (prog1 (c8-eval-0 env (macro-body macro))
+      (pop (env-context env))
+      (pop (env-local-values env))
+      (pop (env-local-bodies env))
+      (pop (env-local-atoms env)))))
 
 (defun c8-apply-0 (env app args)
-  (let ((mac (cdr (assoc app (env-macros env)))))
-    (cond ((instruction? app)
+  (let ((atom (cdr (assoc-local app (env-local-atoms env))))
+        (body (cdr (assoc-local app (env-local-bodies env))))
+        (mac (cdr (assoc app (env-macros env)))))
+    
+    (cond (body (let ((lvals (pop (env-local-values env)))
+                      (lbods (pop (env-local-bodies env)))
+                      (latoms (pop (env-local-atoms env))))
+                  ;; ignore local scope for bodies
+                  (prog1 (c8-eval-0 env body)
+                    (push lvals (env-local-values env))
+                    (push lbods (env-local-bodies env))
+                    (push latoms (env-local-atoms env)))))
+
+          (atom (c8-eval-form-0 env (list* (value-data atom) args)))
+          
+          ((instruction? app)
            (incf (env-pc env) (if (find 'long (list* app args)) 4 2))
            (list (list* app (loop for arg in args collect (c8-eval-arg-0 env arg)))))
+          
           (mac (prog2 (when (eq app (first (env-context env)))
                         (error "Tried to call ~a in context ~a. Recursion is not allowed"
                                app (first (env-context env))))
                    (c8-macroexpand-0 env app mac (list* (macro-calls mac) args))
                  (incf (macro-calls mac))))
-          (t (error "Unknown application (~a) in: ~a ~a" app app args)))))
+          ;; hopefully the definition will be found during the second pass of the initial step
+          (t (list (list* app args))))))
 
 (defun flip-test (test)
   (case test
@@ -340,15 +441,15 @@
   (append (c8-eval-0 env body)
           (unless (eq name 'main) (c8-eval-form-0 env '(ret)))))
 
-(defun c8-insert-main-0 (env forms)
+(defun* c8-insert-main-0 (env forms) (env list) list
   (with-slots (main-label) env
-    (cond ((= main-label +START+) forms)
-          ((> main-label +START+) (append (c8-eval-form-0 env `(JUMP ,main-label)) forms))
-          (t (error "Could not find main label")))))
+    (cond ((null main-label) (error "Could not find main label"))
+          ((= main-label +START+) forms)
+          ((> main-label +START+) (append (c8-eval-form-0 env `(JUMP ,main-label)) forms)))))
 
-(defun c8-eval-form-0 (env form)
+(defun* c8-eval-form-0 (env form) (env list) list
   (case (first form)
-    ((nil))
+    ((nil end))
     (mut (c8-eval-mut-0 env (second form) (third form)))
     (def (c8-eval-def-0 env (second form) (third form)))
     (proc (c8-eval-proc-0 env (second form) (cddr form)))
@@ -361,12 +462,13 @@
     (target (setf (env-target env) (second form)) nil)
     (t (c8-apply-0 env (first form) (rest form)))))
 
-(defun c8-eval-0 (env forms)
+(defun* c8-eval-0 (env forms) (env list) list
   (c8-with-forms-eval-0 (form forms append)
     (c8-eval-form-0 env form)))
 
 (defun c8-eval-program-0 (env forms)
-  (c8-insert-main-0 env (c8-eval-0 env forms)))
+  ;; @HACK eval two times to allow macros to be defined anywhere
+  (c8-insert-main-0 env (c8-eval-0 env (c8-eval-0 env forms))))
 
 (declaim (ftype function c8-eval-arg-1))
 
