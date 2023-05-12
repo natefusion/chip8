@@ -274,6 +274,11 @@
     (push (cons name (mk-macro parameters body)) (env-macros env))
     nil))
 
+(declaim (ftype (function (env list) list)
+                c8-eval-0
+                c8-eval-form-0)
+         (ftype (function) c8-eval-macro-0))
+
 (defun c8-eval-let-0 (env form)
   (when (oddp (length (second form)))
     (error "Odd number of items in let form: ~a" (second form)))

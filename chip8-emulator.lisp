@@ -225,10 +225,10 @@
                                  raylib:+blue+))))))
 
 (defun set-key (chip)
-  (loop for key in (list raylib:+key-X+ raylib:+key-one+ raylib:+key-two+ raylib:+key-three+
-                         raylib:+key-Q+ raylib:+key-W+ raylib:+key-E+ raylib:+key-A+
-                         raylib:+key-S+ raylib:+key-D+ raylib:+key-Z+ raylib:+key-C+
-                         raylib:+key-four+ raylib:+key-R+ raylib:+key-F+ raylib:+key-V+)
+  (loop for key in (list :key-X :key-one :key-two :key-three
+                         :key-Q :key-W :key-E :key-A
+                         :key-S :key-D :key-Z :key-C
+                         :key-four :key-R :key-F :key-V)
         for index from 0
         do (setf (bit (chip8-keys chip) index)
                  (if (raylib:is-key-down key)
@@ -275,9 +275,9 @@
                         (loop until (raylib:window-should-close)
                               ;; GOTCHA: raylib craps itself if with-drawing is not called
                               do (raylib:with-drawing
-                                     (when (raylib:is-key-down raylib:+key-l+)
+                                     (when (raylib:is-key-down :key-l)
                                        (chip8-reset chip (if code (c8-compile code) (c8-load binary))))
-                                     (if (raylib:is-key-down raylib:+key-p+)
+                                     (if (raylib:is-key-down :key-p)
                                          (draw-frame chip)
                                          (idle-loop chip)))))))
 
