@@ -2,4 +2,4 @@
 (load "chip8-assembler.lisp")
 (load "chip8-disassembler.lisp")
 (load "chip8-emulator.lisp")
-(sb-ext:save-lisp-and-die "c8emu" :toplevel #'main :executable t)
+(sb-ext:save-lisp-and-die "c8emu" :toplevel #'main :executable t :compression t)
