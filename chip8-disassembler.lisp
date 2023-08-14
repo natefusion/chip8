@@ -111,15 +111,15 @@
       (loop for x in ins
             for pc from 512 by 2
             with data? = nil
-
+            
             for lab = (let ((d (getf data pc))
                             (l (getf labels pc))
                             (s (getf subroutines pc)))
-                        (when d (setf data? t) d)
-                        (when s (setf data? nil) s)
-                        (when l (setf data? nil) l))
+                        (cond (d (setf data? t) d)
+                              (s (setf data? nil) s)
+                              (l (setf data? nil) l)
+                              (t nil)))
             
             do (when lab (format t "~%~{~A ~}~%" lab))
-               (format t "~{~A ~}~%" (if data? `(include ,@(first x)) (second x)))))))
-
+               (format t "~a        ~{~A ~}~%" pc (if data? (first x) (second x)))))))
 
