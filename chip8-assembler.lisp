@@ -43,13 +43,13 @@
                                                    (append '("(") final '(")"))))))))
 
 (defmacro match (pattern &body clauses)
-  `(cond ,@(dolist (clause clauses clauses)
-             (setf (car clause)
-                   (flet ((ekual (x y) (or (equal x y) (equal x '_))))
+  `(flet ((ekual (x y) (or (equal x y) (equal x '_))))
+     (cond ,@(dolist (clause clauses clauses)
+               (setf (car clause)
                      `(if (and (listp ,pattern) (listp ',(car clause)))
                           (when (eql (list-length ',(car clause)) (list-length ,pattern))
-                            (every ,#'ekual ',(car clause) ,pattern))
-                          (funcall ,#'ekual ',(car clause) ,pattern)))))))
+                            (every #'ekual ',(car clause) ,pattern))
+                          (funcall #'ekual ',(car clause) ,pattern)))))))
 
 (defun* chop (number size &optional (pos 0)) (integer integer &optional integer) integer
   (ldb (byte size pos) number))
@@ -421,7 +421,6 @@
                    (t (c8-eval-form-0 env f)))))
 
          (end-pc (env-pc env)))
-
     (if (null then-pc)
         (cond (else-pc (error "Else without then in: ~a" form))
               ((> (length body) 1) (error "If statements without then or else cannot have more than one statement~%: ~a" form)))
@@ -609,10 +608,8 @@
     ((CALL N)     (emit-op-1 nil 2 NNN))
     ((JUMP N)     (emit-op-1 nil 1 NNN))
     ((JUMP0 N)    (emit-op-1 nil #xB NNN))
-    (_ (error (concatenate 'string
-                           "Invalid instruction: ~a~%"
-                           "Did you maybe not set a target?")
-              instruction))))
+    (_ (error "Invalid instruction: ~a~%~\
+               Did you maybe not set a target?" instruction))))
 
 (defun c8-schip-ins-set (instruction x y n nn nnn)
   (match instruction
